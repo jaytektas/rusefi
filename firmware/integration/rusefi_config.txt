@@ -1630,6 +1630,7 @@ uint8_t[TRACTION_CONTROL_ETB_DROP_SPEED_SIZE] tractionControlSpeedBins;;"RPM", 1
 	float[GAP_TRACKING_LENGTH iterate] triggerGapOverrideFrom;;"ratio", 1, 0, 0, 20, 3
 	float[GAP_TRACKING_LENGTH iterate] triggerGapOverrideTo;;"ratio", 1, 0, 0, 20, 3
 
+	uint8_t autoscale minCamPhaseResolveRpm;Above this RPM, use camshaft information to synchronize the crank's position for full sequential operation. Use this if your cam sensor does weird things at low RPM. Set to 0 to disable, and always use cam to help sync crank.;"rpm", 50, 0, 0, 12500, 0
 	uint8_t autoscale maxCamPhaseResolveRpm;Below this RPM, use camshaft information to synchronize the crank's position for full sequential operation. Use this if your cam sensor does weird things at high RPM. Set to 0 to disable, and always use cam to help sync crank.;"rpm", 50, 0, 0, 12500, 0
 
 	uint8_t autoscale dfcoDelay;Delay before cutting fuel. Set to 0 to cut immediately with no delay. May cause rumbles and pops out of your exhaust...;"sec", 0.1, 0, 0, 10, 1
