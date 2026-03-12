@@ -15,7 +15,7 @@ jobs:
       - name: Generate Pinouts
         uses: chuckwagoncomputing/interactive-pinout@2.18
         with:
-          mapping-path: "firmware/config/boards/*/connectors/*.yaml"
+          mapping-path: "firmware/config/boards/jaytek/connectors/*.yaml"
           warnings: "false"
           warning-no-pins: "skip"
           warning-dupe: "error"
