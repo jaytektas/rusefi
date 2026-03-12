@@ -863,6 +863,10 @@ void TriggerWaveform::initializeTriggerWaveform(operation_mode_e triggerOperatio
 		initializeVvtVanosReluctor(this);
 		break;
 
+	case trigger_type_e::TT_NISSAN8_2_2_2_2_2:
+		initializeNissan8_2_2_2_2_2(this);
+		break;
+
 
 	default:
 	  customTrigger(triggerOperationMode, this, triggerType.type);
