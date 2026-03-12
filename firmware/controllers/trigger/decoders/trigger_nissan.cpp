@@ -255,3 +255,33 @@ void initializeNissanHRvvtIn(TriggerWaveform *s) {
 	s->setTriggerSynchronizationGap3(/*gapIndex*/0, 0.1, 0.3);
 }
 
+/**
+ * 8,2,2,2,2,2 Nissan pattern RB30
+ */
+void initializeNissan8_2_2_2_2_2(TriggerWaveform *s) {
+	s->initialize(FOUR_STROKE_CAM_SENSOR, SyncEdge::Both);
+
+	s->tdcPosition = 0;
+
+	s->setTriggerSynchronizationGap2(7.25 * 0.75, 7.25 * 1.25);
+
+	float width = 4;
+
+  s->addEvent720(1 * 120 - 4 * width, TriggerValue::RISE);
+  s->addEvent720(1 * 120, TriggerValue::FALL);
+
+  s->addEvent720(2 * 120 - width, TriggerValue::RISE);
+  s->addEvent720(2 * 120, TriggerValue::FALL);
+
+  s->addEvent720(3 * 120 - width, TriggerValue::RISE);
+  s->addEvent720(3 * 120, TriggerValue::FALL);
+
+  s->addEvent720(4 * 120 - width, TriggerValue::RISE);
+  s->addEvent720(4 * 120, TriggerValue::FALL);
+
+  s->addEvent720(5 * 120 - width, TriggerValue::RISE);
+  s->addEvent720(5 * 120, TriggerValue::FALL);
+
+  s->addEvent720(6 * 120 - width, TriggerValue::RISE);
+  s->addEvent720(6 * 120, TriggerValue::FALL);
+}
