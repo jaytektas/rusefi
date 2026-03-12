@@ -1,7 +1,3 @@
-#
-# See https://wiki.rusefi.com/Connector-Mapping
-#
-
 name: Generate Interactive Pinouts
 
 on:
@@ -12,65 +8,66 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v7
+      - name: Checkout Repository
+        uses: actions/checkout@v7
 
-    - name: Generate Pinouts
-      uses: chuckwagoncomputing/interactive-pinout@2.18
-      with:
-        mapping-path: firmware/config/boards/*/connectors/*.yaml
-        warnings: "false"
-        warning-no-pins: "skip"
-        warning-dupe: "error"
-        warning-parse: "error"
-        columns: |
-          {
-          "pin":"Pin Number",
-          "ts_name":"TS Name",
-          "type":"Type",
-          "function":"Typical Function",
-          "color":"Pigtail Color"
-          }
-        print-columns: |
-          [
-          "function"
-          ]
-        info-column: "type"
-        templates: |
-          {
-          "___": "pin"
-          }
-        colors: |
-          {
-          "12v":"yellow",
-          "12V":"yellow",
-          "5v":"red",
-          "5V":"red",
-          "at":"green",
-          "av":"brown",
-          "can":"blue",
-          "din":"lime",
-          "etb":"darkcyan",
-          "gnd":"darkgreen",
-          "gp_high":"aqua",
-          "gp_low":"aquamarine",
-          "gp_pp":"cyan",
-          "hall":"darkolivegreen",
-          "high_logic":"gold",
-          "hs":"indigo",
-          "ign":"magenta",
-          "inj":"maroon",
-          "ls":"lightgreen",
-          "mr":"firebrick",
-          "agnd":"olive",
-          "usb":"lightseagreen",
-          "vr":"sienna"
-          }
-          
-          - name: Save as GitHub Artifact
-              uses: actions/upload-artifact@v4
-              with:
-                name: interactive-pinouts
-                path: pinouts/
-                
+      - name: Generate Pinouts
+        uses: chuckwagoncomputing/interactive-pinout@2.18
+        with:
+          mapping-path: "firmware/config/boards/*/connectors/*.yaml"
+          warnings: "false"
+          warning-no-pins: "skip"
+          warning-dupe: "error"
+          warning-parse: "error"
+          columns: |
+            {
+            "pin":"Pin Number",
+            "ts_name":"TS Name",
+            "type":"Type",
+            "function":"Typical Function",
+            "color":"Pigtail Color"
+            }
+          print-columns: |
+            [
+            "function"
+            ]
+          info-column: "type"
+          templates: |
+            {
+            "___": "pin"
+            }
+          colors: |
+            {
+            "12v":"yellow",
+            "12V":"yellow",
+            "5v":"red",
+            "5V":"red",
+            "at":"green",
+            "av":"brown",
+            "can":"blue",
+            "din":"lime",
+            "etb":"darkcyan",
+            "gnd":"darkgreen",
+            "gp_high":"aqua",
+            "gp_low":"aquamarine",
+            "gp_pp":"cyan",
+            "hall":"darkolivegreen",
+            "high_logic":"gold",
+            "hs":"indigo",
+            "ign":"magenta",
+            "inj":"maroon",
+            "ls":"lightgreen",
+            "mr":"firebrick",
+            "agnd":"olive",
+            "sgnd":"olive",
+            "usb":"lightseagreen",
+            "vr":"sienna"
+            }
+
+      - name: Save as GitHub Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: interactive-pinouts
+          path: pinouts/
+          if-no-files-found: error
