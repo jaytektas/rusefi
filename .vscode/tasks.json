@@ -4,6 +4,38 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "Build Firmware (Jaytek F4 Debug)",
+			"type": "shell",
+			"command": "./bin/compile.sh ./config/boards/jaytek/meta-info-jaytek_f4_debug.env PROJECT_BOARD=jaytek_f4",
+			"windows": {
+				"command": "wsl bash -lc 'make -j12 PROJECT_BOARD=jaytek_f4'"
+			},
+			"options": {
+				"cwd": "${workspaceRoot}/firmware"
+			},
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "Build Firmware (Jaytek F7 Debug)",
+			"type": "shell",
+			"command": "./bin/compile.sh ./config/boards/jaytek/meta-info-jaytek_f7_debug.env PROJECT_BOARD=jaytek_f7",
+			"windows": {
+				"command": "wsl bash -lc 'make -j12 PROJECT_BOARD=jaytek_f7'"
+			},
+			"options": {
+				"cwd": "${workspaceRoot}/firmware"
+			},
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
 			"label": "Build Firmware (Frankenso/default)",
 			"type": "shell",
 			"command": "make -j12",

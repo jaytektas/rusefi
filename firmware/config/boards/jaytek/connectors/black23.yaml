@@ -1,0 +1,208 @@
+pins:
+  - pin: 1
+    id: G6
+    function: output
+    class: outputs
+    ts_name: Highside 5
+    type: hs
+
+  - pin: 2
+    id: G7
+    function: output
+    class: outputs
+    ts_name: Highside 6
+    type: hs
+
+  - pin: 3
+    id: C6
+    function: output
+    class: outputs
+    ts_name: Highside 8
+    type: hs
+
+  - pin: 4
+    id: G8
+    function: output
+    class: outputs
+    ts_name: Highside 7
+    type: hs
+
+  - pin: 5
+    id: G4
+    function: output
+    class: outputs
+    ts_name: Highside 3
+    type: hs
+
+  - pin: 6
+    id: G5
+    function: output
+    class: outputs
+    ts_name: Highside 4
+    type: hs
+
+  - pin: 7
+    id: G2
+    function: output
+    class: outputs
+    ts_name: Highside 1
+    type: hs
+
+  - pin: 8
+    id: G3
+    function: output
+    class: outputs
+    ts_name: Highside 2
+    type: hs
+
+  - pin: 9 
+    id: EFI_ADC_9
+    class: analog_inputs
+    ts_name: Battery Sense
+    function: Ignition power / ECU power source. Connect this pin to the output of your ignition switch.
+    type: 12v
+
+  - pin: 10
+    function: CAN bus high
+    color: green
+    type: can
+
+  - pin: 11
+    function: Power GND. Use the battery negative terminal or a clean, unpainted spot on the engine block. Must be same location as White 23.
+    type: gnd
+
+  - pin: 12
+    function: Sensor GND
+    type: sgnd
+
+  - pin: 13
+    function: Power supply from main relay. Connect this pin to the output of the main relay that typically powers injectors, coils, etc. Supplies power to electronic throttle drivers and high side outputs.
+    type: 12v
+
+  - pin: 14
+    function: "Analog voltage +5 supply #1"
+    type: 5v
+
+  - pin: 15
+    function: "Analog voltage +5 supply #2"
+    type: 5v
+
+  - pin: 16
+    function: 12V protected output for sensors
+    type: 12v
+
+  - pin: 17
+    function: CAN bus low
+    color: green
+    type: can
+
+  - pin: 18
+    function: ETB 2 negative
+    type: etb
+    color: blue
+
+  - pin: 19
+    function: ETB 2 positive
+    type: etb
+    color: blue
+
+  - pin: 20
+    function: ETB 1 negative
+    type: etb
+    color: blue
+
+  - pin: 21
+    function: ETB 1 positive
+    type: etb
+    color: blue
+
+  - pin: 22
+    function: Knock input 2
+
+  - pin: 23
+    function: Knock input 1
+
+info:
+  title: Jaytek
+  name: Black23
+  board_url: "https://github.com/jaytektas"
+  directory:
+  cid: black23
+  image:
+    file: black23.jpg
+  pins:
+    - pin: 1
+      x: 239
+      y: 312
+    - pin: 2
+      x: 343
+      y: 312
+    - pin: 3
+      x: 447
+      y: 312
+    - pin: 4
+      x: 551
+      y: 312
+    - pin: 5
+      x: 655
+      y: 312
+    - pin: 6
+      x: 759
+      y: 312
+    - pin: 7
+      x: 863
+      y: 312
+    - pin: 8
+      x: 967
+      y: 312
+    - pin: 9
+      x: 291
+      y: 412
+    - pin: 10
+      x: 395
+      y: 412
+    - pin: 11
+      x: 499
+      y: 412
+    - pin: 12
+      x: 603
+      y: 412
+    - pin: 13
+      x: 707
+      y: 412
+    - pin: 14
+      x: 811
+      y: 412
+    - pin: 15
+      x: 915
+      y: 412
+    - pin: 16
+      x: 239
+      y: 512
+    - pin: 17
+      x: 343
+      y: 512
+    - pin: 18
+      x: 447
+      y: 512
+    - pin: 19
+      x: 551
+      y: 512
+    - pin: 20
+      x: 655
+      y: 512
+    - pin: 21
+      x: 759
+      y: 512
+    - pin: 22
+      x: 863
+      y: 512
+    - pin: 23
+      x: 967
+      y: 512
+
+
+
+
+
+

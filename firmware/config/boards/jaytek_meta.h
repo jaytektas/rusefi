@@ -1,0 +1,140 @@
+/*
+ * jaytek_meta.h
+ */
+
+#pragma once
+
+// not directly related but often used together
+#include "defaults.h"
+
+#define JAYTEK_DEFAULT_AT_PULLUP 2700
+
+#define JAYTEK_LS_1 F11
+#define JAYTEK_LS_2 F12
+#define JAYTEK_LS_3 F13
+#define JAYTEK_LS_4 F14
+#define JAYTEK_LS_5 F15
+#define JAYTEK_LS_6 G0
+#define JAYTEK_LS_7 G1
+#define JAYTEK_LS_8 E7
+#define JAYTEK_LS_9 E8
+#define JAYTEK_LS_10 E9
+#define JAYTEK_LS_11 E10
+#define JAYTEK_LS_12 E11
+#define JAYTEK_LS_13 E12
+#define JAYTEK_LS_14 E13
+#define JAYTEK_LS_15 E14
+#define JAYTEK_LS_16 E15
+#define JAYTEK_LS_17 G10
+#define JAYTEK_LS_18 G11
+#define JAYTEK_LS_19 G12
+#define JAYTEK_LS_20 G13
+#define JAYTEK_LS_21 G14
+#define JAYTEK_LS_22 G15
+
+#define JAYTEK_HS_1 G2
+#define JAYTEK_HS_2 G3
+#define JAYTEK_HS_3 G4
+#define JAYTEK_HS_4 G5
+#define JAYTEK_HS_5 G6
+#define JAYTEK_HS_6 G7
+#define JAYTEK_HS_7 G8
+#define JAYTEK_HS_8 C6
+
+#define JAYTEK_IGN_1 E2
+#define JAYTEK_IGN_2 E3
+#define JAYTEK_IGN_3 E4
+#define JAYTEK_IGN_4 E5
+#define JAYTEK_IGN_5 E6
+#define JAYTEK_IGN_6 C12
+#define JAYTEK_IGN_7 C11
+#define JAYTEK_IGN_8 C10
+#define JAYTEK_IGN_9 F0
+#define JAYTEK_IGN_10 F1
+#define JAYTEK_IGN_11 F2
+#define JAYTEK_IGN_12 F3
+
+// Analog temperature inputs (have fixed bias resistor)
+// IAT
+#define JAYTEK_IN_ANALOG_TEMP_1 EFI_ADC_10 // PC0
+#define JAYTEK_IN_IAT JAYTEK_IN_ANALOG_TEMP_1
+
+// CLT
+#define JAYTEK_IN_ANALOG_TEMP_2 EFI_ADC_11 // PC1
+#define JAYTEK_IN_CLT JAYTEK_IN_ANALOG_TEMP_2
+
+// aux #1
+#define JAYTEK_IN_ANALOG_TEMP_3 EFI_ADC_12 // PC2
+
+// aux #2
+#define JAYTEK_IN_ANALOG_TEMP_4 EFI_ADC_13 // PC3
+
+
+
+// Analog inputs
+#define JAYTEK_IN_ANALOG_VOLT_1 EFI_ADC_0 // PA0
+#define JAYTEK_IN_AV_1_DIGITAL Gpio::A0
+
+#define JAYTEK_IN_ANALOG_VOLT_2 EFI_ADC_1 // PA1
+#define JAYTEK_IN_AV_2_DIGITAL Gpio::A1
+
+#define JAYTEK_IN_ANALOG_VOLT_3 EFI_ADC_2 // PA2
+#define JAYTEK_IN_AV_3_DIGITAL Gpio::A2
+
+#define JAYTEK_IN_ANALOG_VOLT_4 EFI_ADC_3 // PA3
+#define JAYTEK_IN_AV_4_DIGITAL Gpio::A3
+
+#define JAYTEK_IN_ANALOG_VOLT_5 EFI_ADC_4 // PA4
+#define JAYTEK_IN_AV_5_DIGITAL Gpio::A4
+
+#define JAYTEK_IN_ANALOG_VOLT_6 EFI_ADC_5 // PA5
+#define JAYTEK_IN_AV_6_DIGITAL Gpio::A5
+
+#define JAYTEK_IN_ANALOG_VOLT_7 EFI_ADC_6 // PA6
+#define JAYTEK_IN_AV_7_DIGITAL Gpio::A6
+
+#define JAYTEK_IN_ANALOG_VOLT_8 EFI_ADC_7 // PA7
+#define JAYTEK_IN_AV_8_DIGITAL Gpio::A7
+
+#define JAYTEK_IN_ANALOG_VOLT_9 EFI_ADC_14 // PC4
+#define JAYTEK_IN_AV_9_DIGITAL Gpio::C4
+
+#define JAYTEK_IN_ANALOG_VOLT_10 EFI_ADC_15 // PC5
+#define JAYTEK_IN_AV_10_DIGITAL Gpio::C5
+
+#define JAYTEK_IN_ANALOG_VOLT_11 EFI_ADC_8 // PB0
+#define JAYTEK_IN_AV_11_DIGITAL Gpio::B0
+
+#define JAYTEK_IN_ANALOG_VOLT_12 EFI_ADC_9 // PB1
+#define JAYTEK_IN_AV_12_DIGITAL Gpio::B1
+
+#define JAYTEK_IN_ANALOG_VOLT_13 EFI_ADC_32 // PF6
+#define JAYTEK_IN_AV_13_DIGITAL Gpio::F6
+
+#define JAYTEK_IN_ANALOG_VOLT_14 EFI_ADC_33 // PF7
+#define JAYTEK_IN_AV_14_DIGITAL Gpio::F7
+
+#define JAYTEK_IN_ANALOG_VOLT_15 EFI_ADC_34 // PF8
+#define JAYTEK_IN_AV_15_DIGITAL Gpio::F8
+
+#define JAYTEK_IN_ANALOG_VOLT_16 EFI_ADC_35 // PF9
+#define JAYTEK_IN_AV_16_DIGITAL Gpio::F9
+
+#define JAYTEK_IN_MAP JAYTEK_IN_ANALOG_VOLT_1
+#define JAYTEK_IN_TPS JAYTEK_IN_ANALOG_VOLT_2
+#define JAYTEK_IN_TPS1_2 JAYTEK_IN_ANALOG_VOLT_3
+#define JAYTEK_IN_TPS2_1 JAYTEK_IN_ANALOG_VOLT_4
+
+#define JAYTEK_VR_1 Gpio::E0
+#define JAYTEK_VR_2 Gpio::E1
+
+#define JAYTEK_DIGITAL_1 Gpio::D8
+#define JAYTEK_DIGITAL_2 Gpio::D9
+#define JAYTEK_DIGITAL_3 Gpio::D10
+#define JAYTEK_DIGITAL_4 Gpio::D11
+#define JAYTEK_DIGITAL_5 Gpio::D12
+#define JAYTEK_DIGITAL_6 Gpio::D13
+#define JAYTEK_DIGITAL_7 Gpio::D14
+#define JAYTEK_DIGITAL_8 Gpio::D15
+
+void setJAYTEKEtbIO();

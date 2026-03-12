@@ -4,7 +4,22 @@
 	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
 	"version": "0.2.0",
 	"configurations": [
-
+		{
+			"name": "Debug Jaytek with ST-Link",
+			"cwd": "${workspaceFolder}",
+			"executable": "./firmware/build/rusefi.elf",
+			"request": "launch",
+			"type": "cortex-debug",
+			"runToEntryPoint": "main",
+			"showDevDebugOutput": "raw",
+			"servertype": "stlink",
+			"stlinkPath": "/home/jay/snap/code/current/.local/share/stm32cube/bundles/stlink-gdbserver/7.12.0+st.2/bin/ST-LINK_gdbserver",
+			"stm32cubeprogrammer": "/home/jay/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/",
+			//"device": "STM32F429ZI",
+			//"deviceName": "STM32F429ZI",
+			"svdPath": "/home/jay/Downloads/STM32F429.svd",
+			"preLaunchTask": "Build Firmware (Jaytek F7 Debug)"
+		},
 		{
 			"name": "Debug Unit Tests (gdb)",
 			"type": "cppdbg",

@@ -1,0 +1,354 @@
+pins:
+  - pin: 1
+    id: [C3, EFI_ADC_13]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Temp 4
+    function: "Analog Thermistor Input #4"
+    type: at
+
+  - pin: 2
+    id: [C1, EFI_ADC_11]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Temp 2
+    function: "Analog Thermistor Input #2"
+    type: at
+
+  - pin: 3
+    id: [F9, EFI_ADC_35]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 16
+    function: "Analog Voltage Input #16"
+    type: av
+
+  - pin: 4
+    id: [F7, EFI_ADC_33]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 14
+    function: "Analog Voltage Input #14"
+    type: av
+
+  - pin: 5
+    id: [F6, EFI_ADC_32]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 13
+    function: "Analog Voltage Input #13"
+    type: av
+
+  - pin: 6
+    function: "Variable Reluctance #1 positive"
+    type: vr
+    color: blue
+
+  - id: E0
+    class: event_inputs
+    ts_name: VR 1
+
+  - pin: 7
+    function: "Variable Reluctance #1 negative"
+    type: vr
+    color: white
+
+  - pin: 8
+    function: "Variable Reluctance #2 positive"
+    type: vr
+    color: blue
+
+  - id: E1
+    class: event_inputs
+    ts_name: VR 2
+
+  - pin: 9
+    function: "Variable Reluctance #2 negative"
+    type: vr
+    color: white
+
+  - pin: 10
+    function: Sensor GND
+    type: sgnd
+ 
+  - pin: 11
+    function: Sensor GND
+    type: sgnd
+
+  - pin: 12
+    function: Sensor GND
+    type: sgnd
+
+  - pin: 13
+    id: [C2, EFI_ADC_12]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Temp 3
+    function: "Analog Thermistor Input #3"
+    type: at
+
+  - pin: 14
+    id: [C0, EFI_ADC_10]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Temp 1
+    function: "Analog Thermistor Input #1"
+    type: at
+
+  - pin: 15
+    id: [F8, EFI_ADC_34]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 15
+    function: "Analog Voltage Input #15"
+    type: av
+
+  - pin: 16
+    id: [D8, D8]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 1
+    type: din
+    color: yellow
+
+  - pin: 17
+    id: [D9, D9]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 2
+    type: din
+    color: yellow
+
+  - pin: 18
+    id: [D10, D10]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 3
+    type: din
+    color: yellow
+
+  - pin: 19
+    id: [D11, D11]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 4
+    type: din
+    color: yellow
+
+  - pin: 20
+    id: [D12, D12]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 5
+    type: din
+    color: yellow
+
+  - pin: 21
+    id: [D13, D13]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 6
+    type: din
+    color: yellow
+
+  - pin: 22
+    id: [D14, D14]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 7
+    type: din
+    color: yellow
+
+  - pin: 23
+    id: [D15, D15]
+    class: [event_inputs, switch_inputs]
+    function: Digital trigger/switch input
+    ts_name: Digital 8
+    type: din
+    color: yellow
+
+  - pin: 24
+    id: [A3, EFI_ADC_3]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 4
+    function: "Analog Voltage Input #4"
+    type: av
+
+  - pin: 25
+    id: [A2, EFI_ADC_2]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 3
+    function: "Analog Voltage Input #3"
+    type: av
+
+  - pin: 26
+    id: [A1, EFI_ADC_1]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 2
+    function: "Analog Voltage Input #2"
+    type: av
+
+  - pin: 27
+    id: [A0, EFI_ADC_0]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 1
+    function: "Analog Voltage Input #1"
+    type: av
+
+  - pin: 28
+    id: [B0, EFI_ADC_8]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 11
+    function: "Analog Voltage Input #11"
+    type: av
+
+  - pin: 29
+    id: [C5, EFI_ADC_15]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 10
+    function: "Analog Voltage Input #10"
+    type: av
+
+  - pin: 30
+    id: [C4, EFI_ADC_14]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 9
+    function: "Analog Voltage Input #9"
+    type: av
+
+  - pin: 31
+    id: [A7, EFI_ADC_7]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 8
+    function: "Analog Voltage Input #8"
+    type: av
+
+  - pin: 32
+    id: [A6, EFI_ADC_6]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 7
+    function: "Analog Voltage Input #7"
+    type: av
+
+  - pin: 33
+    id: [A5, EFI_ADC_5]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 6
+    function: "Analog Voltage Input #6"
+    type: av
+
+  - pin: 34
+    id: [A4, EFI_ADC_4]
+    class: [switch_inputs, analog_inputs]
+    ts_name: Analog Volt 5
+    function: "Analog Voltage Input #5"
+    type: av
+
+  - pin: 35
+    function: Sensor GND
+    type: sgnd
+
+info:
+  title: Proteus
+  name: blue35
+  cid: blue35
+  image:
+    file: blue35.jpg
+  pins:
+    - pin: 1
+      x: 294
+      y: 300
+    - pin: 2
+      x: 398
+      y: 300
+    - pin: 3
+      x: 502
+      y: 300
+    - pin: 4
+      x: 606
+      y: 300
+    - pin: 5
+      x: 710
+      y: 300
+    - pin: 6
+      x: 814
+      y: 300
+    - pin: 7
+      x: 918
+      y: 300
+    - pin: 8
+      x: 1022
+      y: 300
+    - pin: 9
+      x: 1126
+      y: 300
+    - pin: 10
+      x: 1230
+      y: 300
+    - pin: 11
+      x: 1334
+      y: 300
+    - pin: 12
+      x: 1438
+      y: 300
+    - pin: 13
+      x: 346
+      y: 405
+    - pin: 14
+      x: 450
+      y: 405
+    - pin: 15
+      x: 554
+      y: 405
+    - pin: 16
+      x: 658
+      y: 405
+    - pin: 17
+      x: 762
+      y: 405
+    - pin: 18
+      x: 866
+      y: 405
+    - pin: 19
+      x: 970
+      y: 405
+    - pin: 20
+      x: 1074
+      y: 405
+    - pin: 21
+      x: 1178
+      y: 405
+    - pin: 22
+      x: 1282
+      y: 405
+    - pin: 23
+      x: 1386
+      y: 405
+    - pin: 24
+      x: 294
+      y: 510
+    - pin: 25
+      x: 398
+      y: 510
+    - pin: 26
+      x: 502
+      y: 510
+    - pin: 27
+      x: 606
+      y: 510
+    - pin: 28
+      x: 710
+      y: 510
+    - pin: 29
+      x: 814
+      y: 510
+    - pin: 30
+      x: 918
+      y: 510
+    - pin: 31
+      x: 1022
+      y: 510
+    - pin: 32
+      x: 1126
+      y: 510
+    - pin: 33
+      x: 1230
+      y: 510
+    - pin: 34
+      x: 1334
+      y: 510
+    - pin: 35
+      x: 1438
+      y: 510

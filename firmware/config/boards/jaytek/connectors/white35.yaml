@@ -1,0 +1,390 @@
+pins:
+  - pin: 1
+    id: F11
+    function: Low side driver #1 - Typical injector #1 - cylinder #1
+    class: outputs
+    ts_name: Lowside 1
+    type: ls
+    color: white
+
+  - pin: 2
+    id: G10
+    function: Low side driver #17 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 17
+    color: white
+    type: ls
+
+  - pin: 3
+    id: F13
+    function: Low side driver #3 - Typical injector #3 - cylinder #3
+    class: outputs
+    ts_name: Lowside 3
+    type: ls
+    color: white
+
+  - pin: 4
+    id: G12
+    function: Low side driver #19 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 19
+    color: white
+    type: ls
+
+  - pin: 5
+    id: F15
+    function: Low side driver #5 - Typical injector #5 - cylinder #5
+    class: outputs
+    ts_name: Lowside 5
+    type: ls
+    color: white
+
+  - pin: 6
+    id: G14
+    function: Low side driver #21 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 21
+    color: white
+    type: ls
+
+  - pin: 7
+    id: G1
+    function: Low side driver #7 - Typical injector #7 - cylinder #7
+    class: outputs
+    ts_name: Lowside 7
+    type: ls
+    color: white
+
+  - pin: 8
+    id: E12
+    function: Low side driver #13 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 13
+    color: white
+    type: ls
+
+  - pin: 9
+    id: E8
+    function: Low side driver #9 - injector #9 - cylinder #9 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 9
+    type: ls
+    color: white
+
+  - pin: 10
+    id: E14
+    function: Low side driver #15 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 15
+    color: white
+    type: ls
+
+  - pin: 11
+    id: E10
+    function: Low side driver #11 - injector #11 - cylinder #11 - Typical thermofan #1 relay
+    class: outputs
+    ts_name: Lowside 11
+    type: ls
+    color: white
+
+  - pin: 12
+    id: E11
+    function: Low side driver #12 - injector #12 - cylinder #12 - Typical main relay when vehicle is not already fitted with a main relay that supplies injector, ignition & ecu high side power.
+    class: outputs
+    ts_name: Lowside 12
+    type: ls
+    color: white
+
+  - pin: 13
+    id: F12
+    function: Low side driver #2 - Typical injector #2 - cylinder #2
+    class: outputs
+    ts_name: Lowside 2
+    type: ls
+    color: white
+
+  - pin: 14
+    id: G11
+    function: Low side driver #18 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 18
+    color: white
+    type: ls
+
+  - pin: 15
+    id: F14
+    function: Low side driver #4 - Typical injector #4 - cylinder #4
+    class: outputs
+    ts_name: Lowside 4
+    type: ls
+    color: white
+
+  - pin: 16
+    id: G13
+    function: Low side driver #20 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 20
+    color: white
+    type: ls
+
+  - pin: 17
+    id: G0
+    function: Low side driver #6 - Typical injector #6 - cylinder #6
+    class: outputs
+    ts_name: Lowside 6
+    type: ls
+    color: white
+
+  - pin: 18
+    id: G15
+    function: Low side driver #22 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 22
+    color: white
+    type: ls
+
+  - pin: 19
+    id: E7
+    function: Low side driver #8 - Typical injector #8 - cylinder #8
+    class: outputs
+    ts_name: Lowside 8
+    type: ls
+    color: white
+
+  - pin: 20
+    id: E13
+    function: Low side driver #14 - Typical starter motor relay when using single push or key tap start function
+    class: outputs
+    ts_name: Lowside 14
+    color: white
+    type: ls
+
+  - pin: 21
+    id: E9
+    function: Low side driver #10 - Injector #10 - cylinder #10 - Typical fuel pump relay
+    class: outputs
+    ts_name: Lowside 10
+    type: ls
+    color: white
+
+  - pin: 22
+    id: E15
+    function: Low side driver #16 - Typical custom assignment
+    class: outputs
+    ts_name: Lowside 16
+    color: white
+    type: ls
+
+  - pin: 23
+    function: Power GND. Use the battery negative terminal or a clean, unpainted spot on the engine block. Must be same location as Black 11.
+    type: gnd
+
+  - pin: 24
+    id: E2
+    function: Ignition driver #1 - Typical ignition cylinder 1
+    class: outputs
+    ts_name: Ign 1
+    type: high_logic
+    color: green
+
+  - pin: 25
+    id: E3
+    function: Ignition driver #2 - Typical ignition cylinder 2
+    class: outputs
+    ts_name: Ign 2
+    type: high_logic
+    color: green
+
+  - pin: 26
+    id: E4
+    function: Ignition driver #3 - Typical ignition cylinder 3
+    class: outputs
+    ts_name: Ign 3
+    type: high_logic
+    color: green
+
+  - pin: 27
+    id: E5
+    function: Ignition driver #4 - Typical ignition cylinder 4
+    class: outputs
+    ts_name: Ign 4
+    type: high_logic
+    color: green
+
+  - pin: 28
+    id: E6
+    function: Ignition driver #5 - Typical ignition cylinder 5
+    class: outputs
+    ts_name: Ign 5
+    type: high_logic
+    color: green
+
+  - pin: 29
+    id: C12
+    function: Ignition driver #6 - Typical ignition cylinder 6
+    class: outputs
+    ts_name: Ign 6
+    type: high_logic
+    color: green
+
+  - pin: 30
+    id: C11
+    function: Ignition driver #7 - Typical ignition cylinder 7
+    class: outputs
+    ts_name: Ign 7
+    type: high_logic
+    color: green
+
+  - pin: 31
+    id: C10
+    function: Ignition driver #8 - Typical ignition cylinder 8
+    class: outputs
+    ts_name: Ign 8
+    type: high_logic
+    color: green
+
+  - pin: 32
+    id: F0
+    function: Ignition driver #9 - ignition cylinder 9- Typical custom assignment
+    class: outputs
+    ts_name: Ign 9Typical
+    type: high_logic
+    color: green
+
+  - pin: 33
+    id: F1
+    function: Ignition driver #10 - ignition cylinder 10- Typical custom assignment
+    class: outputs
+    ts_name: Ign 10
+    type: high_logic
+    color: green
+
+  - pin: 34
+    id: F2
+    function: Ignition driver #11 - ignition cylinder 11- Typical custom assignment
+    class: outputs
+    ts_name: Ign 11
+    type: high_logic
+    color: green
+
+  - pin: 35
+    id: F3
+    function: Ignition driver #12 - ignition cylinder 12- Typical custom assignment
+    class: outputs
+    ts_name: Ign 12
+    type: high_logic
+    color: green
+
+info:
+  title: Proteus
+  name: White35
+  cid: white35
+  image:
+    file: white35.jpg
+  pins:
+    - pin: 1
+      x: 216
+      y: 288
+    - pin: 2
+      x: 320
+      y: 288
+    - pin: 3
+      x: 424
+      y: 288
+    - pin: 4
+      x: 528
+      y: 288
+    - pin: 5
+      x: 632
+      y: 288
+    - pin: 6
+      x: 736
+      y: 288
+    - pin: 7
+      x: 840
+      y: 288
+    - pin: 8
+      x: 944
+      y: 288
+    - pin: 9
+      x: 1048
+      y: 288
+    - pin: 10
+      x: 1152
+      y: 288
+    - pin: 11
+      x: 1256
+      y: 288
+    - pin: 12
+      x: 1360
+      y: 288
+    - pin: 13
+      x: 268
+      y: 392
+    - pin: 14
+      x: 372
+      y: 392
+    - pin: 15
+      x: 476
+      y: 392
+    - pin: 16
+      x: 580
+      y: 392
+    - pin: 17
+      x: 684
+      y: 392
+    - pin: 18
+      x: 788
+      y: 392
+    - pin: 19
+      x: 892
+      y: 392
+    - pin: 20
+      x: 996
+      y: 392
+    - pin: 21
+      x: 1100
+      y: 392
+    - pin: 22
+      x: 1204
+      y: 392
+    - pin: 23
+      x: 1308
+      y: 392
+    - pin: 24
+      x: 216
+      y: 496
+    - pin: 25
+      x: 320
+      y: 496
+    - pin: 26
+      x: 424
+      y: 496
+    - pin: 27
+      x: 528
+      y: 496
+    - pin: 28
+      x: 632
+      y: 496
+    - pin: 29
+      x: 736
+      y: 496
+    - pin: 30
+      x: 840
+      y: 496
+    - pin: 31
+      x: 944
+      y: 496
+    - pin: 32
+      x: 1048
+      y: 496
+    - pin: 33
+      x: 1152
+      y: 496
+    - pin: 34
+      x: 1256
+      y: 496
+    - pin: 35
+      x: 1360
+      y: 496
+
