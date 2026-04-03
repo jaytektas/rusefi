@@ -15,9 +15,8 @@
 			"servertype": "stlink",
 			"stlinkPath": "/home/jay/snap/code/current/.local/share/stm32cube/bundles/stlink-gdbserver/7.12.0+st.2/bin/ST-LINK_gdbserver",
 			"stm32cubeprogrammer": "/home/jay/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/",
-			//"device": "STM32F429ZI",
-			//"deviceName": "STM32F429ZI",
-			"svdPath": "/home/jay/Downloads/STM32F429.svd",
+			"device": "STM32F767ZI",
+			"svdPath": "/home/jay/Downloads/STM32F767.svd",
 			"preLaunchTask": "Build Firmware (Jaytek F7 Debug)"
 		},
 		{

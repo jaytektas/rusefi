@@ -51,7 +51,7 @@ const char * getBoardSpecificPinName(brain_pin_e brainPin) {
 		case Gpio::E7: return "Lowside 8";
 		case Gpio::E8: return "Lowside 9";
 		case Gpio::E9: return "Lowside 10";
-		case Gpio::F0: return "Ign 9";
+		case Gpio::F0: return "Ign 9Typical";
 		case Gpio::F1: return "Ign 10";
 		case Gpio::F11: return "Lowside 1";
 		case Gpio::F12: return "Lowside 2";
