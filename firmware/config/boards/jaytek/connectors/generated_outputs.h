@@ -44,7 +44,7 @@ Gpio GENERATED_OUTPUTS[] = {
 	Gpio::C12, // Ign 6
 	Gpio::C11, // Ign 7
 	Gpio::C10, // Ign 8
-	Gpio::F0, // Ign 9
+	Gpio::F0, // Ign 9Typical
 	Gpio::F1, // Ign 10
 	Gpio::F2, // Ign 11
 	Gpio::F3, // Ign 12
@@ -86,7 +86,7 @@ Gpio GENERATED_OUTPUTS[] = {
 // "Ign 6",
 // "Ign 7",
 // "Ign 8",
-// "Ign 9",
+// "Ign 9Typical",
 // "Ign 10",
 // "Ign 11",
 // "Ign 12",
