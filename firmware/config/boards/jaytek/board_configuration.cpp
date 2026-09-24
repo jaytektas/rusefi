@@ -262,7 +262,7 @@ static Gpio JAYTEK_HARLEY_OUTPUTS[] = {
 	Gpio::JAYTEK_IGN_9, // ACR2
 };
 
-int getBoardMetaLowSideOutputsCount() {
+static int boardGetMetaLowSideOutputsCount() {
     if (engineConfiguration->engineType == engine_type_e::SUBARU_2011) {
         return getBoardMetaOutputsCount();
     }
@@ -326,7 +326,7 @@ Gpio::JAYTEK_LS_22,
 	Gpio::JAYTEK_HS_8
 };
 
-int getBoardMetaOutputsCount() {
+static int boardGetMetaOutputsCount() {
     if (engineConfiguration->engineType == engine_type_e::SUBARU_2011) {
         return efi::size(JAYTEK_SUBARU_OUTPUTS);
     }
@@ -348,7 +348,7 @@ int getBoardMetaOutputsCount() {
     return efi::size(JAYTEK_OUTPUTS);
 }
 
-int getBoardMetaDcOutputsCount() {
+static int boardGetMetaDcOutputsCount() {
     if (engineConfiguration->engineType == engine_type_e::PROTEUS_BMW_M73) {
         return 2;
     }
@@ -363,7 +363,7 @@ int getBoardMetaDcOutputsCount() {
 /*    return 2; JAYTEK has two h-b ridges but stim board is short on channels to test :( */
 }
 
-Gpio* getBoardMetaOutputs() {
+static Gpio* boardGetMetaOutputs() {
     if (engineConfiguration->engineType == engine_type_e::SUBARU_2011) {
         return JAYTEK_SUBARU_OUTPUTS;
     }
@@ -388,6 +388,12 @@ Gpio* getBoardMetaOutputs() {
 
 
 void setup_custom_board_overrides() {
+#if HW_JAYTEK
+	custom_board_getMetaOutputsCount = boardGetMetaOutputsCount;
+	custom_board_getMetaLowSideOutputsCount = boardGetMetaLowSideOutputsCount;
+	custom_board_getMetaOutputs = boardGetMetaOutputs;
+	custom_board_getMetaDcOutputsCount = boardGetMetaDcOutputsCount;
+#endif // HW_JAYTEK
 	custom_board_DefaultConfiguration = jaytek_boardDefaultConfiguration;
 	custom_board_ConfigOverrides =  jaytek_boardConfigOverrides;
 }
