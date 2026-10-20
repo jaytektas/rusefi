@@ -186,7 +186,7 @@ public class TextGauge {
                 JMenu categoryMenu = new JMenu(category);
                 pm.add(categoryMenu);
                 for (GaugeModel gauge : ini.getGaugeCategories().get(category).getGauges()) {
-                    JMenuItem mi = new JMenuItem(gauge.getTitle());
+                    JMenuItem mi = new JMenuItem(GaugeMenuLabel.getTitle(uiContext, gauge));
                     mi.addActionListener(ev -> {
                         setChannel(uiContext, gauge.getName());
                         onChannelChange.accept(gauge.getName());
@@ -196,6 +196,7 @@ public class TextGauge {
             }
         }
         if (pm.getSubElements().length > 0) {
+            GaugeMenuSearch.addTo(pm);
             pm.show(e.getComponent(), e.getX(), e.getY());
         }
     }

@@ -122,6 +122,8 @@ trigger_type_e getVvtTriggerType(vvt_mode_e vvtMode) {
 		return trigger_type_e::TT_TOYOTA_3_TOOTH_UZ;
 	case VVT_NISSAN_MR:
 		return trigger_type_e::TT_NISSAN_MR18_CAM_VVT;
+	case VVT_NISSAN_VK56DE:
+		return trigger_type_e::TT_NISSAN_VK56DE_CAM;
 	case VVT_BMW_VANOS_RELUCTOR:
 		return trigger_type_e::TT_BMW_VANOS_RELUCTOR;
 	case VVT_MITSUBISHI_4G63:
@@ -347,6 +349,8 @@ void Engine::reset() {
  * todo: https://github.com/rusefi/rusefi/issues/4308 Uniform reset pattern for all Lua adjustments
  */
 void Engine::resetLua() {
+	// [tag:lua_accel_enrichment] Clear the script's transient request on VM reload.
+	module<TpsAccelEnrichment>()->resetLua();
 	engineState.lua = {};
 	engineState.lua.fuelAdd = 0;
 	engineState.lua.fuelMult = 1;
@@ -358,6 +362,11 @@ void Engine::resetLua() {
 #if EFI_BOOST_CONTROL
 	module<BoostController>().unmock().resetLua();
 #endif // EFI_BOOST_CONTROL
+#if EFI_LAUNCH_CONTROL
+	// The next slow callback releases the hold with normal timing ramp-out,
+	// or keeps it armed if the hardware switch is still pressed.
+	module<RollingLaunchControl>().unmock().luaRollingLaunchState = false;
+#endif // EFI_LAUNCH_CONTROL
 	ignitionState.luaTimingAdd = 0;
 	ignitionState.luaTimingMult = 1;
 #if EFI_IDLE_CONTROL

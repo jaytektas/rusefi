@@ -154,7 +154,7 @@ void canMazdaRX8(CanCycle cycle) {
 		{
    CanTxMessage msg(CanCategory::NBC, CAN_MAZDA_RX_STATUS_2, 8, DEFAULT_BUS_INDEX);
 			auto clt = Sensor::get(SensorType::Clt);
-			msg[0] = (uint8_t)(clt.value_or(0) + 69); //temp gauge //~170 is red, ~165 last bar, 152 centre, 90 first bar, 92 second bar
+			msg[0] = (uint8_t)(clt.value_or(0) + 57); //temp gauge //~170 is red, ~165 last bar, 152 centre, 90 first bar, 92 second bar
 			// TODO: fixme!
 			//msg[1] = ((int16_t)(engine->engineState.vssEventCounter*(engineConfiguration->vehicleSpeedCoef*0.277*2.58))) & 0xff;
 			msg[2] = 0x00; // unknown
@@ -675,7 +675,8 @@ void updateDash(CanCycle cycle) {
 		canDashboardTS(cycle);
 		break;
 	default:
-		criticalError("Nothing for canNbcType %d/%s", engineConfiguration->canNbcType, getCan_nbc_e(engineConfiguration->canNbcType));
+		// [tag:user_facing_ini_labels] Match the dash selection label in tunerstudio.template.ini.
+		criticalError("Unsupported CAN dash type: %d", engineConfiguration->canNbcType);
 		break;
 	}
 }

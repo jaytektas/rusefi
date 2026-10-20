@@ -80,7 +80,8 @@ static int getIgnitionPinForIndex(int cylinderIndex, ignition_mode_e ignitionMod
 		return cylinderIndex % 2;
 
 	default:
-		firmwareError(ObdCode::CUSTOM_OBD_IGNITION_MODE, "Invalid ignition mode getIgnitionPinForIndex(): %d", engineConfiguration->ignitionMode);
+		// [tag:user_facing_ini_labels] Qualify the ignition INI's "Mode" field.
+		firmwareError(ObdCode::CUSTOM_OBD_IGNITION_MODE, "Invalid Ignition Mode: %d", engineConfiguration->ignitionMode);
 		return 0;
 	}
 }
@@ -194,9 +195,13 @@ static void overFireSparkAndPrepareNextSchedule(IgnitionEvent *event) {
 #endif /* SPARK_EXTREME_LOGGING */
 	float actualDwellMs = event->actualDwellTimer.getElapsedSeconds() * 1e3;
 
-	warning((ObdCode)((int)ObdCode::CUSTOM_Ignition_Coil_Overcharge_1 + event->cylinderIndex),
-		"cylinder %d %s overcharge %f ms",
-		event->cylinderIndex + 1, event->outputs[0]->getName(), actualDwellMs);
+	// Coastdown can miss the scheduled firing tooth. Keep the protective
+	// discharge below active, but do not report it as a fault after a stop request.
+	if (!getLimpManager()->shutdownController.isEngineStop(getTimeNowNt())) {
+		warning((ObdCode)((int)ObdCode::CUSTOM_Ignition_Coil_Overcharge_1 + event->cylinderIndex),
+			"cylinder %d %s overcharge %f ms",
+			event->cylinderIndex + 1, event->outputs[0]->getName(), actualDwellMs);
+	}
 
 	// kill pending fire
 	engine->module<TriggerScheduler>()->cancel(&event->sparkEvent);
@@ -216,12 +221,18 @@ void fireSparkAndPrepareNextSchedule(IgnitionEvent *event) {
 	}
 #endif
 
+	bool hasChargedOutput = false;
+	for (auto* output : event->chargedOutputs) {
+		hasChargedOutput |= output != nullptr;
+	}
+
 	for (int i = 0; i< MAX_OUTPUTS_FOR_IGNITION;i++) {
-		IgnitionOutputPin *output = event->outputs[i];
+		IgnitionOutputPin *output = hasChargedOutput ? event->chargedOutputs[i] : event->outputs[i];
 
 		if (output) {
 			fireSparkBySettingPinLow(event, output);
 		}
+		event->chargedOutputs[i] = nullptr;
 	}
 
 	efitick_t nowNt = getTimeNowNt();
@@ -345,12 +356,17 @@ void turnSparkPinHighStartCharging(IgnitionEvent *event) {
   bool skippedDwellDueToTriggerNoised = false;
 	for (int i = 0; i< MAX_OUTPUTS_FOR_IGNITION;i++) {
 		IgnitionOutputPin *output = event->outputs[i];
+		event->chargedOutputs[i] = nullptr;
 		if (output != NULL) {
 		  // at the moment we have a funny xor as if outputs could have different destiny. That's probably an over exaggeration,
 		  // realistically it should be enough to check the sequencing of only the first output but that would be less elegant
 		  //
 		  // maybe it would have need nicer if instead of an array of outputs we had a linked list of outputs? but that's just daydreaming.
-			skippedDwellDueToTriggerNoised |= startDwellByTurningSparkPinHigh(event, output);
+			bool skipped = startDwellByTurningSparkPinHigh(event, output);
+			skippedDwellDueToTriggerNoised |= skipped;
+			if (!skipped) {
+				event->chargedOutputs[i] = output;
+			}
 		}
 	}
 
@@ -528,7 +544,8 @@ void initializeIgnitionActions() {
 		list->isReady = false;
 		return;
 	}
-	efiAssertVoid(ObdCode::CUSTOM_ERR_6592, engineConfiguration->cylindersCount > 0, "cylindersCount");
+	// [tag:user_facing_ini_labels] Match the engine setting label in tunerstudio.template.ini.
+	efiAssertVoid(ObdCode::CUSTOM_ERR_6592, engineConfiguration->cylindersCount > 0, "Number of cylinders must be greater than zero");
 
 	for (size_t cylinderIndex = 0; cylinderIndex < engineConfiguration->cylindersCount; cylinderIndex++) {
 		list->elements[cylinderIndex].cylinderIndex = cylinderIndex;
@@ -697,7 +714,8 @@ int getNumberOfSparks(ignition_mode_e mode) {
 	case IM_WASTED_SPARK:
 		return 2;
 	default:
-		firmwareError(ObdCode::CUSTOM_ERR_IGNITION_MODE, "Unexpected ignition_mode_e %d", mode);
+		// [tag:user_facing_ini_labels] Qualify the ignition INI's "Mode" field.
+		firmwareError(ObdCode::CUSTOM_ERR_IGNITION_MODE, "Invalid Ignition Mode: %d", mode);
 		return 1;
 	}
 }

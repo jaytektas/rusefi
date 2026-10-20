@@ -102,6 +102,7 @@
 #define GAUGE_NAME_VVS "Vehicle Speed"
 #define GAUGE_NAME_GEAR_RATIO "Gearbox Ratio"
 #define GAUGE_NAME_DETECTED_GEAR "Detected Gear"
+#define GAUGE_NAME_TRANS_SLIP "Transmission Slip"
 #define GAUGE_NAME_TURBO_SPEED "Turbocharger Speed"
 #define GAUGE_NAME_VBAT "VBatt"
 #define GAUGE_NAME_VIGN "VIgn"
@@ -273,3 +274,7 @@
 #define GAUGE_NAME_DEBUG_I5 "debug i5"
 
 #define DIALOG_NAME_VEHICLE_INFORMATION "Vehicle Information"
+
+! UI input selection sentinels; no ECU storage or behavior change.
+#define TRANSIENT_INPUT_NONE 0
+#define TRANSIENT_INPUT_INVALID 1

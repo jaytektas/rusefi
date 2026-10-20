@@ -18,6 +18,7 @@
 #include "hardware.h"
 #include "dc_motors.h"
 #include "idle_hardware.h"
+#include "electronic_throttle.h"
 // https://stackoverflow.com/questions/23427804/cant-find-mkdir-function-in-dirent-h-for-windows
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -53,8 +54,6 @@ EngineTestHelperBase::EngineTestHelperBase(Engine * eng, persistent_config_s * p
 	setTimeNowUs(0);
 	ButtonDebounce::resetForUnitTests();
 
-	// Reset global error code set so checkEngine bit doesn't leak between tests
-	clearWarnings();
 	EnableToothLogger();
 	if (engine || engineConfiguration || config) {
 		firmwareError(ObdCode::OBD_PCM_Processor_Fault,
@@ -63,6 +62,10 @@ EngineTestHelperBase::EngineTestHelperBase(Engine * eng, persistent_config_s * p
 	engine = eng;
 	engineConfiguration = &pers->engineConfiguration;
 	config = pers;
+
+	// Reset global error code set so checkEngine bit doesn't leak between tests
+	// NOTE: this needs valid engine pointer
+	clearWarnings();
 
 	setup_custom_fw_overrides();
 }
@@ -254,6 +257,11 @@ EngineTestHelper::~EngineTestHelper() {
   closeUnitTestLog();
 
 	// Cleanup
+#if EFI_ELECTRONIC_THROTTLE_BODY
+	// [tag:etb_test_lifetime] Release static controllers' references before our
+	// persistentConfig is destroyed, even if a test installed mock controllers.
+	resetElectronicThrottleForUnitTest();
+#endif
   	// reset pin config state, will trigger isPinConfigurationChanged
 	enginePins.resetForUnitTest();
 	enginePins.reset();
@@ -446,13 +454,13 @@ void EngineTestHelper::fireTriggerEvents(int count) {
 
 void EngineTestHelper::assertInjectorUpEvent(const char *msg, int eventIndex, efitimeus_t momentUs, long injectorIndex) {
 	InjectionEvent *event = &engine.injectionEvents.elements[injectorIndex];
-	auto const expected_action{ action_s::make<turnInjectionPinHigh>(uintptr_t{}) };
+	auto const expected_action{ action_s::make<startInjection>(scheduler_arg_t{}) };
 	assertEvent(msg, eventIndex, expected_action, momentUs, event);
 }
 
 void EngineTestHelper::assertInjectorDownEvent(const char *msg, int eventIndex, efitimeus_t momentUs, long injectorIndex) {
 	InjectionEvent *event = &engine.injectionEvents.elements[injectorIndex];
-	auto const expected_action{ action_s::make<turnInjectionPinLow>((InjectionEvent*){}) };
+	auto const expected_action{ action_s::make<endInjection>(scheduler_arg_t{}) };
 	assertEvent(msg, eventIndex, expected_action, momentUs, event);
 }
 
@@ -497,9 +505,8 @@ scheduling_s * EngineTestHelper::assertScheduling(const char *msg, int index, sc
 void EngineTestHelper::assertEvent(const char *msg, int index, action_s const& action, efitimeus_t momentUs, InjectionEvent *expectedEvent) {
 	scheduling_s *event = assertEvent5(msg, index, action, momentUs);
 
-	auto const actualEvent{ event->action.getArgument<InjectionEvent*>() };
-
-	ASSERT_EQ(expectedEvent->outputs[0], actualEvent->outputs[0]) << msg;
+	const InjectorContext ctx(event->action.getArgumentRaw());
+	ASSERT_EQ(expectedEvent->getIndex(), ctx.eventIndex()) << msg;
 // but this would not work	assertEqualsLM(msg, expectedPair, (long)eventPair);
 }
 

@@ -9,6 +9,10 @@
 
 #include <rusefi/true_false.h>
 
+#ifndef KNOCK_SPECTROGRAM
+#define KNOCK_SPECTROGRAM FALSE
+#endif
+
 // see SIM_SD1_PORT and SIM_SD2_PORT
 #define TS_PRIMARY_UxART_PORT SD1
 #define EFI_TS_PRIMARY_IS_SERIAL TRUE
@@ -54,7 +58,7 @@
 #define _HAS_STATIC_RTTI FALSE
 #define __GXX_RTTI FALSE
 #define EFI_SENT_SUPPORT FALSE
-
+#define EFI_I2C_SUPPORT FALSE
 
 #define EFI_ENGINE_EMULATOR TRUE
 
@@ -199,6 +203,7 @@
 #ifndef EFI_LUA
 #define EFI_LUA TRUE
 #endif
+#define LUA_I2C_DAC FALSE
 #define LUA_USER_HEAP 100000
 
 #ifndef TRUE

@@ -14,6 +14,10 @@
 
 #define EFI_GPIO_HARDWARE TRUE
 
+#ifndef KNOCK_SPECTROGRAM
+#define KNOCK_SPECTROGRAM FALSE
+#endif
+
 #ifndef SENT_CHANNELS_NUM
 #define SENT_CHANNELS_NUM 1
 #endif
@@ -312,7 +316,7 @@
 #endif
 
 #ifndef BOARD_PCA9685_COUNT
-#define BOARD_PCA9685_COUNT 0
+#define BOARD_PCA9685_COUNT 1
 #endif
 
 #define EFI_ANALOG_SENSORS TRUE
@@ -335,6 +339,10 @@
 
 #ifndef EFI_CAN_SUPPORT
 #define EFI_CAN_SUPPORT TRUE
+#endif
+
+#ifndef EFI_I2C_SUPPORT
+#define EFI_I2C_SUPPORT TRUE
 #endif
 
 #ifndef EFI_UDS
@@ -393,8 +401,10 @@
 #define EFI_FILE_LOGGING TRUE
 #endif
 
+// Save flash on F4: use the matching INI from the firmware bundle.
+// F7/H7 inherit this default; boards with room can explicitly enable the image.
 #ifndef EFI_EMBED_INI_MSD
-#define EFI_EMBED_INI_MSD TRUE
+#define EFI_EMBED_INI_MSD FALSE
 #endif
 
 #ifndef EFI_USB_SERIAL
@@ -413,7 +423,7 @@
 	//  - use compressed USB MSD image (requires 32k of memory)
 	//  - use perf trace (requires ~16k of memory)
 	//  - use spectorgram (requires ~12k of memory), need disable perf trace or compressed USB MSD image
-	#ifndef KNOCK_SPECTROGRAM
+	#if !KNOCK_SPECTROGRAM
 	  #ifndef EFI_USE_COMPRESSED_INI_MSD
 		#define EFI_USE_COMPRESSED_INI_MSD TRUE
 		#endif
@@ -432,6 +442,10 @@
 
 #ifndef EFI_LUA
 #define EFI_LUA TRUE
+#endif
+
+#ifndef LUA_I2C_DAC
+#define LUA_I2C_DAC FALSE
 #endif
 
 #ifndef FULL_SD_LOGS

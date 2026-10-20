@@ -1,11 +1,13 @@
 package com.rusefi.ui.widgets.tune;
 
 import com.opensr5.ConfigurationImage;
+import com.opensr5.ini.DialogModel;
 import com.opensr5.ini.ExpressionEvaluator;
 import com.opensr5.ini.GroupMenuModel;
 import com.opensr5.ini.IniFileModel;
 import com.opensr5.ini.MenuItem;
 import com.opensr5.ini.MenuModel;
+import com.opensr5.ini.PanelModel;
 import com.opensr5.ini.SeparatorMenuItem;
 import com.opensr5.ini.SubMenuModel;
 import com.rusefi.binaryprotocol.BinaryProtocol;
@@ -22,6 +24,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.DefaultTreeSelectionModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
+import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.*;
@@ -36,6 +39,8 @@ import static com.rusefi.core.ui.AutoupdateUtil.trueLayoutAndRepaint;
 public class MainMenuTreeWidget {
     private final JPanel contentPane = new JPanel(new BorderLayout());
     private final JTree tree;
+    private int keyboardNavigationDirection;
+    private boolean keyboardChildNavigation;
     private final DefaultMutableTreeNode root = new DefaultMutableTreeNode("Menus");
 
     private final JTextField searchField = new JTextField();
@@ -98,8 +103,9 @@ public class MainMenuTreeWidget {
                     return;
                 }
                 for (TreePath path : paths) {
-                    if (isSelectable(path)) {
-                        super.setSelectionPaths(new TreePath[]{path});
+                    TreePath selectablePath = getSelectablePath(path);
+                    if (selectablePath != null) {
+                        super.setSelectionPaths(new TreePath[]{selectablePath});
                         return;
                     }
                 }
@@ -111,13 +117,21 @@ public class MainMenuTreeWidget {
                     return;
                 }
                 for (TreePath path : paths) {
-                    if (isSelectable(path)) {
-                        super.addSelectionPaths(new TreePath[]{path});
+                    TreePath selectablePath = getSelectablePath(path);
+                    if (selectablePath != null) {
+                        super.addSelectionPaths(new TreePath[]{selectablePath});
                         return;
                     }
                 }
             }
         });
+        installNavigationActions(-1, false, "selectPrevious", "selectPreviousChangeLead", "selectPreviousExtendSelection",
+            "selectLast", "selectLastChangeLead", "selectLastExtendSelection",
+            "scrollUpChangeSelection", "scrollUpChangeLead", "scrollUpExtendSelection");
+        installNavigationActions(1, false, "selectNext", "selectNextChangeLead", "selectNextExtendSelection",
+            "selectFirst", "selectFirstChangeLead", "selectFirstExtendSelection",
+            "scrollDownChangeSelection", "scrollDownChangeLead", "scrollDownExtendSelection");
+        installNavigationActions(1, true, "selectChild", "selectChildChangeLead");
         tree.setToggleClickCount(1);
         tree.addMouseListener(new MouseAdapter() {
             @Override
@@ -359,6 +373,55 @@ public class MainMenuTreeWidget {
         }
     }
 
+    private void installNavigationActions(int direction, boolean childNavigation, String... names) {
+        for (String name : names) {
+            Action original = tree.getActionMap().get(name);
+            if (original == null) {
+                continue;
+            }
+            tree.getActionMap().put(name, new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    keyboardNavigationDirection = direction;
+                    keyboardChildNavigation = childNavigation;
+                    try {
+                        original.actionPerformed(e);
+                    } finally {
+                        keyboardNavigationDirection = 0;
+                        keyboardChildNavigation = false;
+                    }
+                    // Swing actions can set their lead/anchor and scroll to the rejected row.
+                    TreePath selected = tree.getSelectionPath();
+                    tree.setLeadSelectionPath(selected);
+                    tree.setAnchorSelectionPath(selected);
+                    if (selected != null) {
+                        tree.scrollPathToVisible(selected);
+                    }
+                }
+            });
+        }
+    }
+
+    private TreePath getSelectablePath(TreePath path) {
+        if (isSelectable(path)) {
+            return path;
+        }
+        // Only keyboard navigation skips rows. Mouse/programmatic selection still rejects them.
+        if (path != null && keyboardNavigationDirection != 0) {
+            int row = tree.getRowForPath(path);
+            for (row += keyboardNavigationDirection; row >= 0 && row < tree.getRowCount(); row += keyboardNavigationDirection) {
+                TreePath candidate = tree.getPathForRow(row);
+                if (keyboardChildNavigation && !path.getParentPath().isDescendant(candidate)) {
+                    break;
+                }
+                if (isSelectable(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
     private boolean isSelectable(TreePath path) {
         if (path == null) {
             return false;
@@ -545,6 +608,46 @@ public class MainMenuTreeWidget {
 
     public void setOnSelect(Consumer<SubMenuModel> onSelect) {
         this.onSelect = onSelect;
+    }
+
+    /** Selects the first available menu page containing a field, following nested panel references. */
+    public boolean selectField(String fieldKey) {
+        IniFileModel ini = uiContext.iniFileState.getIniFileModel();
+        if (ini == null || fieldKey == null) {
+            return false;
+        }
+        // Search in menu order, not dialog declaration order: inner dialogs and unused
+        // pin summaries may be declared before the page that actually exposes the field.
+        Enumeration<?> nodes = root.preorderEnumeration();
+        while (nodes.hasMoreElements()) {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
+            if (!(node.getUserObject() instanceof SubMenuModel) || !isSelectable(new TreePath(node.getPath()))) {
+                continue;
+            }
+            SubMenuModel subMenu = (SubMenuModel) node.getUserObject();
+            if (containsField(ini.getDialogs().get(subMenu.getKey()), ini, fieldKey, new HashSet<>())) {
+                selectSubMenu(subMenu.getKey());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsField(DialogModel dialog, IniFileModel ini, String fieldKey, Set<String> visited) {
+        if (dialog == null || !visited.add(dialog.getKey())) {
+            return false;
+        }
+        for (DialogModel.Field field : dialog.getFields()) {
+            if (fieldKey.equals(field.getKey())) {
+                return true;
+            }
+        }
+        for (PanelModel panel : dialog.getPanels()) {
+            if (containsField(panel.resolveDialog(ini), ini, fieldKey, visited)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void selectSubMenu(String subMenuKey) {

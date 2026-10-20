@@ -321,6 +321,96 @@ todo: spllit into smaller tests?
         assertEquals(fuelPath, tree.getSelectionPath(), "disabled node should not replace the selection");
     }
 
+    @Test
+    public void testKeyboardNavigationSkipsUnavailableRows() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            for (String blockedItem : Arrays.asList(
+                "subMenu = std_separator\n",
+                "subMenu = disabled, \"Disabled\", {0}\n",
+                "subMenu = invisible, \"Invisible\", , {0}\n")) {
+                MainMenuTreeWidget widget = navigationWidget(blockedItem);
+                JTree tree = (JTree) ((JScrollPane) widget.getContentPane().getComponent(1)).getViewport().getView();
+                tree.expandRow(0);
+                TreePath first = tree.getPathForRow(1);
+                TreePath last = tree.getPathForRow(3);
+                tree.setSelectionPath(first);
+                pressTreeKey(tree, KeyEvent.VK_DOWN, 0);
+                assertEquals(last, tree.getSelectionPath(), "Down skips " + blockedItem);
+                assertEquals(last, tree.getLeadSelectionPath());
+                pressTreeKey(tree, KeyEvent.VK_DOWN, 0);
+                assertEquals(last, tree.getSelectionPath(), "Down stops at the last row");
+
+                tree.setSelectionPath(last);
+                pressTreeKey(tree, KeyEvent.VK_UP, 0);
+                assertEquals(first, tree.getSelectionPath(), "Up skips " + blockedItem);
+                assertEquals(first, tree.getLeadSelectionPath());
+                pressTreeKey(tree, KeyEvent.VK_UP, 0);
+                assertEquals(tree.getPathForRow(0), tree.getSelectionPath(), "Up continues to the category");
+            }
+        });
+    }
+
+    private static MainMenuTreeWidget navigationWidget(String blockedItems) {
+        String text = "[Constants]\npage = 1\n[Menu]\nmenu = \"Setup\"\n"
+            + "subMenu = first, \"First\"\n" + blockedItems + "subMenu = last, \"Last\"\n";
+        IniFileModel ini = readLines(IniFileReaderUtil.read(
+            new ByteArrayInputStream(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        UIContext context = new UIContext();
+        context.iniFileState.setIniFileModelForTest(ini);
+        MainMenuTreeWidget widget = new MainMenuTreeWidget(context);
+        widget.refreshExpressions(new ConfigurationImage(new byte[100]));
+        return widget;
+    }
+
+    private static void pressTreeKey(JTree tree, int keyCode, int modifiers) {
+        Object binding = tree.getInputMap(JComponent.WHEN_FOCUSED).get(KeyStroke.getKeyStroke(keyCode, modifiers));
+        assertNotNull(binding, "Tree key must have a binding");
+        Action action = tree.getActionMap().get(binding);
+        assertNotNull(action, "Tree key must have an action");
+        action.actionPerformed(new java.awt.event.ActionEvent(tree, java.awt.event.ActionEvent.ACTION_PERFORMED,
+            binding.toString()));
+    }
+
+    @Test
+    public void testSelectFieldFindsAvailableParentInMenuGroup() throws Exception {
+        String text = "[Constants]\npage = 1\n"
+            + "fuelPumpPin = bits, U08, 0, [0:1], \"NONE\", \"B6 Low Side output\"\n"
+            + "[Menu]\nmenu = \"Setup\"\n"
+            + "subMenu = cyclicDialog, \"Cyclic panel\"\n"
+            + "subMenu = disabledOutputs, \"Disabled outputs\", {0}\n"
+            + "groupMenu = \"Actuators\"\ngroupChildMenu = outputsDialog, \"Outputs\"\n"
+            + "[UserDefined]\n"
+            + "dialog = unusedPins\nfield = \"Fuel Pump\", fuelPumpPin\n"
+            + "field = \"Unlisted field\", unlistedPin\n"
+            + "dialog = cyclicDialog\npanel = cyclicDialog\npanel = missingDialog\n"
+            + "dialog = disabledOutputs\npanel = fuelPumpDialog\n"
+            + "dialog = fuelPumpDialog\nfield = \"Fuel Pump\", fuelPumpPin\n"
+            + "dialog = outputsDialogLeft\npanel = fuelPumpDialog\n"
+            + "dialog = outputsDialog\npanel = outputsDialogLeft\n";
+        IniFileModel ini = readLines(IniFileReaderUtil.read(
+            new ByteArrayInputStream(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+
+        SwingUtilities.invokeAndWait(() -> {
+            UIContext context = new UIContext();
+            context.iniFileState.setIniFileModelForTest(ini);
+            MainMenuTreeWidget widget = new MainMenuTreeWidget(context);
+            widget.refreshExpressions(new ConfigurationImage(new byte[100]));
+            AtomicReference<String> opened = new AtomicReference<>();
+            widget.setOnSelect(subMenu -> opened.set(subMenu.getKey()));
+
+            assertTrue(widget.selectField("fuelPumpPin"));
+            assertEquals("outputsDialog", opened.get(),
+                "Skip unlisted/disabled dialogs and follow panels inside a menu group");
+            JTree tree = (JTree) ((JScrollPane) widget.getContentPane().getComponent(1)).getViewport().getView();
+            DefaultMutableTreeNode selected = (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            assertEquals("Actuators", ((DefaultMutableTreeNode) selected.getParent()).getUserObject());
+            assertFalse(widget.selectField("unlistedPin"));
+            assertFalse(widget.selectField("unknownPin"));
+            assertFalse(widget.selectField(null));
+            assertEquals("outputsDialog", opened.get(), "An unavailable field must not change pages");
+        });
+    }
+
     private void assertNoSeparators(DefaultMutableTreeNode node) {
         assertFalse(node.getUserObject() instanceof com.opensr5.ini.SeparatorMenuItem, "search results must not contain separators");
         for (int i = 0; i < node.getChildCount(); i++) {

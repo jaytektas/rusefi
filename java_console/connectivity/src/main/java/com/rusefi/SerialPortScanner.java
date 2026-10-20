@@ -56,13 +56,18 @@ public class SerialPortScanner implements PortScanner {
         @Nullable
         PortResult inspectSocketCan();
 
+        /**
+         * @return null when PCAN is unavailable, CAN when the adapter opens without an ECU reply,
+         * or an ECU classification when rusEFI replies
+         */
+        @Nullable
+        PortResult inspectPcan();
+
         boolean isLiveEcuConnected();
 
         boolean isDfuDeviceConnected();
 
         boolean isStLinkConnected();
-
-        boolean isPcanConnected();
 
         /** Clock used for the device-probe throttle; injectable so tests can script time. */
         long now();
@@ -217,15 +222,19 @@ public class SerialPortScanner implements PortScanner {
     // last-known results are reused between probes so the ProgramSelector menu stays stable.
     // [tag:better_ux_for_flashing]
     private static final long DEVICE_PROBE_INTERVAL_MS = 3000;
-    // SocketCAN invalidation is also requested by the firmware-update thread while scanning is suspended.
+    // CAN transport invalidation is also requested by the firmware-update thread while scanning is suspended.
     private volatile long lastDeviceProbeMs = 0;
     private boolean lastDfuConnected = false;
     private boolean lastStLinkConnected = false;
-    private boolean lastPcanConnected = false;
+    private volatile boolean lastPcanConnected = false;
     private volatile boolean lastSocketCanAvailable = false;
+    private volatile boolean pcanPortPinned = false;
     private volatile boolean socketCanPortPinned = false;
     @Nullable
+    private volatile PortResult lastPcanPort;
+    @Nullable
     private volatile PortResult lastSocketCanPort;
+    private long pcanPortGeneration;
     private long socketCanPortGeneration;
     private long deviceProbeInvalidationGeneration;
 
@@ -244,6 +253,8 @@ public class SerialPortScanner implements PortScanner {
         // the binary protocol handshake for seconds.  Drop them before the scan pipeline.
         final Set<String> serialPorts = probes.listSerialPorts().stream()
             .filter(name -> !name.startsWith("ttyS"))
+            // PCAN uses its own probe; SLCAN stays in this list.
+            .filter(name -> !LinkManager.PCAN.equals(name))
             .collect(Collectors.toCollection(TreeSet::new));
         log.info("getCommPorts (filtered): " + serialPorts);
 
@@ -304,7 +315,25 @@ public class SerialPortScanner implements PortScanner {
                 }
                 lastDfuConnected = probes.isDfuDeviceConnected();
                 lastStLinkConnected = probes.isStLinkConnected();
-                lastPcanConnected = probes.isPcanConnected();
+                final long pcanGeneration;
+                final boolean pcanPinned;
+                synchronized (lock) {
+                    pcanGeneration = pcanPortGeneration;
+                    pcanPinned = pcanPortPinned;
+                }
+                if (!pcanPinned) {
+                    PortResult pcanResult = probes.inspectPcan();
+                    synchronized (lock) {
+                        if (pcanGeneration == pcanPortGeneration && !pcanPortPinned) {
+                            lastPcanConnected = pcanResult != null;
+                            lastPcanPort = pcanResult != null
+                                && pcanResult.type != SerialPortType.CAN
+                                && pcanResult.type != SerialPortType.Unknown
+                                ? pcanResult
+                                : null;
+                        }
+                    }
+                }
                 final long socketCanGeneration;
                 final boolean socketCanPinned;
                 synchronized (lock) {
@@ -336,10 +365,6 @@ public class SerialPortScanner implements PortScanner {
             dfuConnected = false;
             stLinkConnected = false;
         }
-/*
-        if (PCANConnected)
-            ports.add(new PortResult(LinkManager.PCAN, SerialPortType.CAN));
- */
         // Surface a DFU device (STM32 built-in bootloader) as a synthetic, non-connectable port so a
         // running console can offer DFU flashing in-session [tag:better_ux_for_flashing]. dfuConnected stays exposed via
         // AvailableHardware.isDfuFound() for the existing ProgramSelector menu logic.
@@ -350,8 +375,11 @@ public class SerialPortScanner implements PortScanner {
         boolean isListUpdated;
         AvailableHardware currentHardware;
         synchronized (lock) {
-            PCANConnected = includeSlowLookup && lastPcanConnected;
+            PCANConnected = lastPcanConnected;
             socketCanAvailable = lastSocketCanAvailable;
+            if (lastPcanPort != null) {
+                ports.add(lastPcanPort);
+            }
             if (lastSocketCanPort != null) {
                 ports.add(lastSocketCanPort);
             }
@@ -438,12 +466,19 @@ public class SerialPortScanner implements PortScanner {
      * Pre-populate the port cache with a known result so the scanner does not
      * re-inspect an actively-used port on the next scan cycle.  Call this
      * before resuming the scanner after a reconnect to prevent the scanner from
-     * opening the port and competing with an already-established BinaryProtocol
-     * connection on the same serial stream.
+     * opening the port and competing with a BinaryProtocol connection on the
+     * same serial stream or process-wide CAN channel.
      */
     @Override
     public void cachePort(PortResult port) {
         synchronized (lock) {
+            if (LinkManager.PCAN.equals(port.port)) {
+                lastPcanConnected = true;
+                lastPcanPort = port;
+                pcanPortPinned = true;
+                pcanPortGeneration++;
+                return;
+            }
             if (LinkManager.SOCKET_CAN.equals(port.port)) {
                 lastSocketCanAvailable = true;
                 lastSocketCanPort = port;
@@ -464,15 +499,21 @@ public class SerialPortScanner implements PortScanner {
     @Override
     public void invalidatePort(String portName) {
         portCache.invalidate(portName);
-        if (LinkManager.SOCKET_CAN.equals(portName)) {
+        if (LinkManager.SOCKET_CAN.equals(portName) || LinkManager.PCAN.equals(portName)) {
             synchronized (lock) {
-                socketCanPortPinned = false;
-                lastSocketCanPort = null;
-                socketCanPortGeneration++;
+                if (LinkManager.SOCKET_CAN.equals(portName)) {
+                    socketCanPortPinned = false;
+                    lastSocketCanPort = null;
+                    socketCanPortGeneration++;
+                } else {
+                    pcanPortPinned = false;
+                    lastPcanPort = null;
+                    pcanPortGeneration++;
+                }
                 deviceProbeInvalidationGeneration++;
                 lastDeviceProbeMs = probes.now() - DEVICE_PROBE_INTERVAL_MS;
                 final List<PortResult> ports = knownHardware.getKnownPorts().stream()
-                    .filter(port -> !LinkManager.SOCKET_CAN.equals(port.port))
+                    .filter(port -> !portName.equals(port.port))
                     .collect(Collectors.toList());
                 knownHardware = new AvailableHardware(
                     ports,

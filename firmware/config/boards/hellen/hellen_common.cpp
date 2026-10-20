@@ -21,6 +21,11 @@ void setHellenCan2() {
 	engineConfiguration->can2TxPin = Gpio::B13;
 }
 
+void setHellenUart2() {
+	engineConfiguration->binarySerialRxPin = Gpio::D5;
+	engineConfiguration->binarySerialTxPin = Gpio::D6;
+}
+
 static void init5vpDiag() {
 #ifdef DIAG_5VP_PIN
 static bool is5vpInit = false;
@@ -246,7 +251,7 @@ ObdCode boardGetAnalogDiagnostic()
 #endif
 }
 
-float getAnalogInputDividerCoefficient(adc_channel_e hwChannel) {
+static float hellenGetAnalogInputDividerCoefficient(adc_channel_e hwChannel) {
 #if (HELLEN_BOARD_MM64 == TRUE)
 	(void)hwChannel;
 	if (0)
@@ -267,6 +272,10 @@ float getAnalogInputDividerCoefficient(adc_channel_e hwChannel) {
 	}
 
 	return engineConfiguration->analogInputDividerCoefficient;
+}
+
+void setupHellenBoardOverrides() {
+	custom_board_getAnalogInputDividerCoefficient = hellenGetAnalogInputDividerCoefficient;
 }
 
 void setupHellenSharedInputs(void) {

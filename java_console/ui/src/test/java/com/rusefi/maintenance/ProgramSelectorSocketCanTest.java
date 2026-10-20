@@ -1,5 +1,7 @@
 package com.rusefi.maintenance;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
+
 import com.rusefi.ConnectivityContext;
 import com.rusefi.FakePortScanner;
 import com.rusefi.PortResult;
@@ -8,6 +10,7 @@ import com.rusefi.SerialPortType;
 import com.rusefi.binaryprotocol.BinaryProtocol;
 import com.rusefi.io.LinkManager;
 import com.rusefi.io.UpdateOperationCallbacks;
+import com.rusefi.maintenance.jobs.OpenBltAutoJob;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -38,7 +41,8 @@ class ProgramSelectorSocketCanTest {
         FakePortScanner scanner = new FakePortScanner();
         UpdateOperationCallbacks callbacks = mock(UpdateOperationCallbacks.class);
 
-        boolean result = ProgramSelector.flashSocketCanWithSuspendedScanner(
+        boolean result = FirmwareOperations.flashCanWithSuspendedScanner(
+            LinkManager.SOCKET_CAN,
             FIRMWARE,
             callbacks,
             scanner,
@@ -58,7 +62,8 @@ class ProgramSelectorSocketCanTest {
     void scannerIsInvalidatedAndResumedWhenFlashFails() {
         FakePortScanner scanner = new FakePortScanner();
 
-        boolean result = ProgramSelector.flashSocketCanWithSuspendedScanner(
+        boolean result = FirmwareOperations.flashCanWithSuspendedScanner(
+            LinkManager.SOCKET_CAN,
             FIRMWARE,
             mock(UpdateOperationCallbacks.class),
             scanner,
@@ -72,6 +77,23 @@ class ProgramSelectorSocketCanTest {
     }
 
     @Test
+    void pcanScannerIsSuspendedAndInvalidatedAroundFlash() {
+        FakePortScanner scanner = new FakePortScanner();
+
+        boolean result = FirmwareOperations.flashCanWithSuspendedScanner(
+            LinkManager.PCAN,
+            FIRMWARE,
+            mock(UpdateOperationCallbacks.class),
+            scanner,
+            (fileName, openbltCallbacks) -> { });
+
+        assertTrue(result);
+        assertEquals(Collections.singletonList(LinkManager.PCAN), scanner.invalidatedPorts);
+        assertEquals(1, scanner.suspendCount);
+        assertEquals(1, scanner.resumeCount);
+    }
+
+    @Test
     void scannerResumesEvenWhenInvalidationFails() {
         PortScanner scanner = mock(PortScanner.class);
         when(scanner.suspend()).thenReturn(new CountDownLatch(0));
@@ -79,7 +101,8 @@ class ProgramSelectorSocketCanTest {
             .when(scanner).invalidatePort(LinkManager.SOCKET_CAN);
 
         assertThrows(IllegalStateException.class, () ->
-            ProgramSelector.flashSocketCanWithSuspendedScanner(
+            FirmwareOperations.flashCanWithSuspendedScanner(
+                LinkManager.SOCKET_CAN,
                 FIRMWARE,
                 mock(UpdateOperationCallbacks.class),
                 scanner,
@@ -95,7 +118,7 @@ class ProgramSelectorSocketCanTest {
         UpdateOperationCallbacks callbacks = mock(UpdateOperationCallbacks.class);
         FakePortScanner scanner = new FakePortScanner();
 
-        boolean result = ProgramSelector.flashOpenbltSocketCanAutomatic(
+        boolean result = FirmwareOperations.flashOpenbltCanAutomatic(
             null,
             new PortResult(LinkManager.SOCKET_CAN, SerialPortType.Ecu),
             mock(BinaryProtocol.class),
@@ -106,8 +129,49 @@ class ProgramSelectorSocketCanTest {
             CalibrationsHelper.FirmwareUpdatePolicy.FORWARD_MIGRATION);
 
         assertFalse(result);
-        verify(callbacks).logLine("SocketCAN firmware update requires a live SocketCAN ECU connection.");
+        verify(callbacks).logLine("CAN firmware update requires a matching live CAN ECU connection.");
         assertEquals(0, scannerOperations(scanner));
+    }
+
+    @Test
+    void automaticEntryRejectsSocketCanConnectionForPcanTarget() {
+        LinkManager linkManager = mock(LinkManager.class);
+        when(linkManager.getLastTriedPort()).thenReturn(LinkManager.SOCKET_CAN);
+        UpdateOperationCallbacks callbacks = mock(UpdateOperationCallbacks.class);
+        FakePortScanner scanner = new FakePortScanner();
+
+        boolean result = FirmwareOperations.flashOpenbltCanAutomatic(
+            null,
+            new PortResult(LinkManager.PCAN, SerialPortType.Ecu),
+            mock(BinaryProtocol.class),
+            linkManager,
+            callbacks,
+            new ConnectivityContext(scanner),
+            null,
+            CalibrationsHelper.FirmwareUpdatePolicy.FORWARD_MIGRATION);
+
+        assertFalse(result);
+        verify(callbacks).logLine("CAN firmware update requires a matching live CAN ECU connection.");
+        assertEquals(0, scannerOperations(scanner));
+    }
+
+    /** Keep SLCAN connectable without routing it to a PCAN or serial flasher. */
+    @Test
+    void slcanIsExcludedFromAutomaticCanFlashUntilRawTransportExists() {
+        PortResult slcan = new PortResult("SLCAN:COM7", SerialPortType.Ecu);
+
+        assertTrue(LinkManager.isSlcanPort(slcan.port));
+        assertTrue(LinkManager.isCanPort(slcan.port));
+        assertNull(ProgramSelector.resolveFlashPort(
+            slcan,
+            true,
+            Collections.emptyList(),
+            Collections.emptyList(),
+            true));
+
+        OpenBltAutoJob job = new OpenBltAutoJob(
+            slcan, null, new ConnectivityContext(new FakePortScanner()), null);
+        assertEquals("OpenBLT via SLCAN:COM7", job.getName());
     }
 
     @Test
@@ -120,8 +184,8 @@ class ProgramSelectorSocketCanTest {
             return CompletableFuture.completedFuture(null);
         });
 
-        assertTrue(ProgramSelector.prepareSocketCanHandoff(
-            linkManager, mock(UpdateOperationCallbacks.class), () -> {
+        assertTrue(FirmwareOperations.prepareCanHandoff(
+            LinkManager.SOCKET_CAN, linkManager, mock(UpdateOperationCallbacks.class), () -> {
                 events.add("reboot");
                 return true;
             }));
@@ -140,8 +204,8 @@ class ProgramSelectorSocketCanTest {
 
         assertFalse(CalibrationsHelper.prepareFirmwareHandoff(
             mock(BinaryProtocol.class), linkManager,
-            () -> ProgramSelector.prepareSocketCanHandoff(
-                linkManager, mock(UpdateOperationCallbacks.class), () -> false)));
+            () -> FirmwareOperations.prepareCanHandoff(
+                LinkManager.SOCKET_CAN, linkManager, mock(UpdateOperationCallbacks.class), () -> false)));
 
         verify(linkManager, never()).disconnect();
     }

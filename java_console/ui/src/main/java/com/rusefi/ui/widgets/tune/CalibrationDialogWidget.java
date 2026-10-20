@@ -5,7 +5,6 @@ import com.opensr5.ini.CurveModel;
 import com.opensr5.ini.DialogModel;
 import com.opensr5.ini.ExpressionEvaluator;
 import com.opensr5.ini.GaugeModel;
-import com.opensr5.ini.IniValue;
 import com.opensr5.ini.IndicatorModel;
 import com.opensr5.ini.IniFileModel;
 import com.opensr5.ini.TsStringFunction;
@@ -19,9 +18,7 @@ import com.rusefi.core.SensorCentral;
 import com.rusefi.core.SensorSubscription;
 import com.rusefi.binaryprotocol.BinaryProtocol;
 import com.rusefi.ui.UIContext;
-import com.rusefi.ui.widgets.SensorGauge;
-import eu.hansolo.steelseries.gauges.Radial;
-import eu.hansolo.steelseries.tools.BackgroundColor;
+import com.rusefi.ui.widgets.CircularGauge;
 import com.rusefi.ui.laf.GradientTitleBorder;
 import com.rusefi.ui.util.ConstrainedBorderLayout;
 import com.rusefi.ui.util.ScrollablePanel;
@@ -31,6 +28,7 @@ import com.rusefi.trigger.TriggerImage;
 import com.rusefi.trigger.TriggerWheelInfo;
 import com.opensr5.ConfigurationImageGetterSetter;
 import java.io.File;
+import java.text.DecimalFormat;
 
 import com.devexperts.logging.Logging;
 
@@ -54,6 +52,7 @@ public class CalibrationDialogWidget {
     private static final Logging log = getLogging(CalibrationDialogWidget.class);
 
     private final JPanel contentPane = new ScrollablePanel();
+    private final DialogViewport viewportPane = new DialogViewport(contentPane);
     private final UIContext uiContext;
     private final List<Runnable> triggerImageUpdaters = new ArrayList<>();
     private ConfigurationImage workingImage;
@@ -73,6 +72,21 @@ public class CalibrationDialogWidget {
     private Consumer<String> onShowInPinout;
     /** Restores the last navigated view; set on every update() call so the VE generator panel can return to it. */
     private Runnable currentViewRestorer;
+    private String currentKey;
+    private Runnable onViewChanged = () -> { };
+
+    /** Also reports replacements from navigation, undo, discard, and loading another tune. */
+    public void setOnViewChanged(Runnable listener) {
+        onViewChanged = listener;
+    }
+
+    public String getCurrentKey() {
+        return currentKey;
+    }
+
+    public IniFileModel getCurrentIniFileModel() {
+        return currentIniFileModel;
+    }
 
     public void setOnConfigChange(Consumer<ConfigurationImage> onConfigChange) {
         this.onConfigChange = onConfigChange;
@@ -107,23 +121,29 @@ public class CalibrationDialogWidget {
         final String channel;
         final String units;
         final int valDigits;
+        final boolean compact;
 
         ReadoutLabelEntry(JLabel valueLabel, String channel, String units, int valDigits) {
+            this(valueLabel, channel, units, valDigits, false);
+        }
+
+        ReadoutLabelEntry(JLabel valueLabel, String channel, String units, int valDigits, boolean compact) {
             this.valueLabel = valueLabel;
             this.channel = channel;
             this.units = units;
             this.valDigits = valDigits;
+            this.compact = compact;
         }
     }
 
-    /** Tracks a gauge-ref readout rendered as a small Radial gauge for live update. */
+    /** Tracks a gauge-ref readout rendered as a small circular gauge for live update. */
     private static class GaugeReadoutEntry {
-        final Radial radial;
+        final CircularGauge radial;
         final String channel;
         final String gaugeName;
         final boolean hasExpressionLabels;
 
-        GaugeReadoutEntry(Radial radial, String channel, String gaugeName, boolean hasExpressionLabels) {
+        GaugeReadoutEntry(CircularGauge radial, String channel, String gaugeName, boolean hasExpressionLabels) {
             this.radial = radial;
             this.channel = channel;
             this.gaugeName = gaugeName;
@@ -155,6 +175,33 @@ public class CalibrationDialogWidget {
         }
     }
 
+    // Keep help outside the INI layout, especially panels already using BorderLayout.NORTH.
+    private static JPanel prepareTopicHelp(JPanel container, String reference, IniFileModel ini) {
+        JButton help = CalibrationFieldFactory.createTopicHelpButton(ini, reference);
+        if (help == null) {
+            return container;
+        }
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+        toolbar.add(help);
+        JPanel body = new JPanel();
+        body.setAlignmentX(Component.LEFT_ALIGNMENT);
+        container.setLayout(new BorderLayout());
+        container.add(toolbar, BorderLayout.NORTH);
+        container.add(body, BorderLayout.CENTER);
+        return body;
+    }
+
+    private static JComponent withTopicHelp(JComponent content, String reference, IniFileModel ini) {
+        JPanel wrapper = new JPanel();
+        JPanel body = prepareTopicHelp(wrapper, reference, ini);
+        if (body == wrapper) {
+            return content;
+        }
+        body.setLayout(new BorderLayout());
+        body.add(content, BorderLayout.CENTER);
+        return wrapper;
+    }
+
     public ConfigurationImage getWorkingImage() {
         return workingImage;
     }
@@ -164,15 +211,21 @@ public class CalibrationDialogWidget {
      * from the previous board are not carried over to the next connection.
      */
     public void reset() {
+        viewportPane.fillWidth = false;
         workingImage = null;
+        currentKey = null;
+        currentIniFileModel = null;
         CalibrationFieldFactory.closeHelpPopup();
         clearLiveComponents();
         contentPane.removeAll();
         contentPane.revalidate();
         contentPane.repaint();
+        onViewChanged.run();
     }
 
     public void update(DialogModel dialogModel, IniFileModel iniFileModel, ConfigurationImage ci) {
+        currentKey = dialogModel == null ? null : dialogModel.getKey();
+        viewportPane.fillWidth = false;
         CalibrationFieldFactory.closeHelpPopup();
         final DialogModel capturedDm = dialogModel;
         final IniFileModel capturedIni = iniFileModel;
@@ -190,14 +243,15 @@ public class CalibrationDialogWidget {
             }
             contentPane.setName(uiName);
 
-            applyLayout(contentPane, dialogModel.getLayoutHint());
+            JPanel body = prepareTopicHelp(contentPane, dialogModel.getTopicHelp(), iniFileModel);
+            applyLayout(body, dialogModel.getLayoutHint());
             contentPane.setAlignmentX(Component.LEFT_ALIGNMENT);
-            fillPanel(contentPane, dialogModel, iniFileModel, ci,
+            fillPanel(body, dialogModel, iniFileModel, ci,
                 getFieldLabelWidth(dialogModel, iniFileModel, new HashSet<>()),
                 getFieldEditorWidth(dialogModel, iniFileModel, ci, new HashSet<>()));
 
             if (TriggerImageHelper.isTriggerPanel(dialogModel.getKey(), uiName)) {
-                addTriggerImage(contentPane, dialogModel.getKey(), uiName);
+                addTriggerImage(body, dialogModel.getKey(), uiName);
             }
         }
         updateLiveDemand();
@@ -213,6 +267,7 @@ public class CalibrationDialogWidget {
             contentPane.revalidate();
             contentPane.repaint();
         });
+        onViewChanged.run();
     }
 
     public void update(String key) {
@@ -222,25 +277,31 @@ public class CalibrationDialogWidget {
     }
 
     public void update(String key, IniFileModel iniFileModel, ConfigurationImage ci) {
+        currentKey = key;
+        currentIniFileModel = iniFileModel;
+        viewportPane.fillWidth = false;
         CalibrationFieldFactory.closeHelpPopup();
         final String capturedKey = key;
         final IniFileModel capturedIniForRestore = iniFileModel;
         currentViewRestorer = () -> update(capturedKey, capturedIniForRestore, workingImage);
         clearLiveComponents();
+        expressionRows.clear();
+        triggerImageUpdaters.clear();
         contentPane.removeAll();
+        workingImage = ci != null ? ci.clone() : null;
         if (key != null) {
             DialogModel dialog = iniFileModel.getDialogs().get(key);
             if (dialog != null) {
                 update(dialog, iniFileModel, ci);
                 return;
             }
-            workingImage = ci != null ? ci.clone() : null;
-
             Runnable notifyEdit = () -> { if (onConfigChange != null) onConfigChange.accept(workingImage); };
 
             TableModel table = iniFileModel.getTable(key);
             if (table != null) {
-                contentPane.setLayout(new BoxLayout(contentPane, BoxLayout.Y_AXIS));
+                viewportPane.fillWidth = true;
+                JPanel body = prepareTopicHelp(contentPane, table.getTopicHelp(), iniFileModel);
+                body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
                 //TODO: nicer injection of this button? maybe a comment on the .ini and then hook this?
                 if ("veTableTbl".equals(table.getTableId())) {
                     final IniFileModel capturedIni = iniFileModel;
@@ -248,25 +309,28 @@ public class CalibrationDialogWidget {
                     genVeBtn.addActionListener(e -> showVeGeneratorPanel(capturedIni));
                     JPanel veToolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
                     veToolbar.add(genVeBtn);
-                    contentPane.add(veToolbar);
+                    body.add(veToolbar);
                 }
                 TuningTableView tuningTableView = new TuningTableView(table.getTitle());
                 tuningTableView.displayTable(iniFileModel, table.getTableId(), workingImage);
                 tuningTableView.setOnEdit(notifyEdit);
-                contentPane.add(tuningTableView.getContent());
+                body.add(tuningTableView.getContent());
             } else {
                 CurveModel curve = iniFileModel.getCurves().get(key);
                 if (curve != null) {
-                    contentPane.setLayout(new BoxLayout(contentPane, BoxLayout.Y_AXIS));
+                    viewportPane.fillWidth = true;
+                    JPanel body = prepareTopicHelp(contentPane, curve.getTopicHelp(), iniFileModel);
+                    body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
                     CurveWidget curveWidget = new CurveWidget(curve, iniFileModel, workingImage);
                     curveWidget.setOnEdit(notifyEdit);
-                    contentPane.add(curveWidget.getContentPane());
+                    body.add(curveWidget.getContentPane());
                 }
             }
         }
         updateLiveDemand();
         contentPane.revalidate();
         contentPane.repaint();
+        onViewChanged.run();
     }
 
     private void fillPanel(JPanel container, DialogModel dialogModel, IniFileModel iniFileModel,
@@ -307,6 +371,9 @@ public class CalibrationDialogWidget {
                 case FIELD:
                     renderField(container, entry.getAs(DialogModel.Field.class), iniFileModel, ci,
                         fieldLabelWidth, fieldEditorWidth);
+                    break;
+                case RUNTIME_VALUE:
+                    renderRuntimeValue(container, entry.getAs(DialogModel.Field.class), iniFileModel, ci);
                     break;
                 case COMMAND:
                     container.add(CalibrationFieldFactory.createCommandRow(
@@ -409,6 +476,26 @@ public class CalibrationDialogWidget {
             CalibrationFieldFactory.fixRowHeight(row);
         }
 
+        registerFieldExpressions(row, field, iniFileModel, ci);
+        container.add(row);
+    }
+
+    private void renderRuntimeValue(JPanel container, DialogModel.Field field, IniFileModel ini,
+                                    ConfigurationImage ci) {
+        JPanel row = CalibrationFieldFactory.createLabelRow(field);
+        row.add(Box.createHorizontalStrut(10));
+        JLabel value = new JLabel("---");
+        value.setFont(value.getFont().deriveFont(Font.BOLD));
+        row.add(value);
+        CalibrationFieldFactory.fixRowHeight(row);
+        // runtimeValue has no precision/units arguments; show up to three decimal places.
+        readoutEntries.add(new ReadoutLabelEntry(value, field.getKey(), "", 3, true));
+        registerFieldExpressions(row, field, ini, ci);
+        container.add(row);
+    }
+
+    private void registerFieldExpressions(JPanel row, DialogModel.Field field, IniFileModel iniFileModel,
+                                         ConfigurationImage ci) {
         boolean hasExpressions = field.getEnableExpression() != null || field.getVisibleExpression() != null;
         if (hasExpressions) {
             ExpressionRow exprRow = new ExpressionRow(row, field.getEnableExpression(), field.getVisibleExpression());
@@ -418,7 +505,6 @@ public class CalibrationDialogWidget {
                 applyExpressionState(exprRow, iniFileModel, evalImage);
             }
         }
-        container.add(row);
     }
 
     private void renderIndicatorGroup(JPanel container, List<IndicatorModel> indicators, IniFileModel iniFileModel, ConfigurationImage ci, int cols) {
@@ -544,9 +630,10 @@ public class CalibrationDialogWidget {
 
         CurveModel curve = iniFileModel.getCurves().get(panel.getPanelName());
         if (curve != null) {
+            viewportPane.fillWidth = true;
             CurveWidget curveWidget = new CurveWidget(curve, iniFileModel, workingImage);
             curveWidget.setOnEdit(notifyEdit);
-            JComponent content = curveWidget.getContentPane();
+            JComponent content = withTopicHelp(curveWidget.getContentPane(), curve.getTopicHelp(), iniFileModel);
             CalibrationFieldFactory.applyStyle(content);
             content.setAlignmentX(Component.LEFT_ALIGNMENT);
             if (constraint != null) targetContainer.add(content, constraint); else targetContainer.add(content);
@@ -555,6 +642,7 @@ public class CalibrationDialogWidget {
 
         TableModel table = iniFileModel.getTable(panel.getPanelName());
         if (table != null) {
+            viewportPane.fillWidth = true;
             TuningTableView tuningTableView = new TuningTableView(table.getTitle());
             tuningTableView.displayTable(iniFileModel, table.getTableId(), workingImage);
             tuningTableView.setOnEdit(notifyEdit);
@@ -570,6 +658,7 @@ public class CalibrationDialogWidget {
                 wrapper.add(content, BorderLayout.CENTER);
                 content = wrapper;
             }
+            content = withTopicHelp(content, table.getTopicHelp(), iniFileModel);
             CalibrationFieldFactory.applyStyle(content);
             content.setAlignmentX(Component.LEFT_ALIGNMENT);
             if (constraint != null) targetContainer.add(content, constraint); else targetContainer.add(content);
@@ -580,7 +669,8 @@ public class CalibrationDialogWidget {
         panelWidget.setAlignmentX(Component.LEFT_ALIGNMENT);
         DialogModel subDialog = panel.resolveDialog(iniFileModel);
         String subLayoutHint = subDialog != null ? subDialog.getLayoutHint() : null;
-        applyLayout(panelWidget, subLayoutHint);
+        JPanel body = prepareTopicHelp(panelWidget, subDialog == null ? null : subDialog.getTopicHelp(), iniFileModel);
+        applyLayout(body, subLayoutHint);
 
         if (subDialog != null) {
             String uiName = subDialog.getUiName();
@@ -590,11 +680,11 @@ public class CalibrationDialogWidget {
             if (uiName != null && !uiName.trim().isEmpty()) {
                 GradientTitleBorder.installBorder(uiName, panelWidget);
             }
-            fillPanel(panelWidget, subDialog, iniFileModel, ci,
+            fillPanel(body, subDialog, iniFileModel, ci,
                 Math.max(0, fieldLabelWidth - panelWidget.getInsets().left), fieldEditorWidth);
 
             if (TriggerImageHelper.isTriggerPanel(subDialog.getKey(), uiName) || "Sub Panel".equals(uiName)) {
-                addTriggerImage(panelWidget, subDialog.getKey(), uiName);
+                addTriggerImage(body, subDialog.getKey(), uiName);
             }
         } else {
             panelWidget.setName(panel.getPanelName());
@@ -675,13 +765,14 @@ public class CalibrationDialogWidget {
         for (ReadoutLabelEntry entry : readoutEntries) {
             double val = SensorCentral.getInstance().getValue(entry.channel);
             String text = Double.isNaN(val) ? "---" :
-                    String.format("%." + entry.valDigits + "f", val) +
+                    (entry.compact ? new DecimalFormat("0.###").format(val) :
+                        String.format("%." + entry.valDigits + "f", val)) +
                     (entry.units != null && !entry.units.isEmpty() ? " " + entry.units : "");
             entry.valueLabel.setText(text);
         }
         for (GaugeReadoutEntry entry : gaugeReadoutEntries) {
             double val = SensorCentral.getInstance().getValue(entry.channel);
-            if (!Double.isNaN(val)) entry.radial.setValue(val);
+            entry.radial.setValue(val);
             if (entry.hasExpressionLabels) {
                 ISensorHolder.ResolvedGaugeLabels labels = SensorCentral.getInstance().getResolvedLabels(entry.gaugeName);
                 if (labels != null) {
@@ -730,33 +821,22 @@ public class CalibrationDialogWidget {
         return cell;
     }
 
-    private double resolveGaugeValue(IniValue v, double fallback) {
-        if (v == null) return fallback;
-        if (!v.isExpression()) return v.getNumericValue();
-        Double evaluated = ExpressionEvaluator.evaluateNumericExpression(v.getRawString(), currentIniFileModel, workingImage);
-        return evaluated != null ? evaluated : fallback;
-    }
-
     private JComponent buildGaugeCell(GaugeModel gaugeModel) {
-        if (GraphicsEnvironment.isHeadless()) {
-            return new JLabel(gaugeModel.getName());
-        }
-
-        double lo = resolveGaugeValue(gaugeModel.getLowValueValue(), gaugeModel.getLowValue());
-        double hi = resolveGaugeValue(gaugeModel.getHighValueValue(), gaugeModel.getHighValue());
-        Radial radial = SensorGauge.createRadial(hi, lo, gaugeModel);
-        radial.setBackgroundColor(BackgroundColor.LIGHT_GRAY);
-        radial.setLcdDecimals(gaugeModel.getValueDecimalPlaces());
+        CircularGauge radial = new CircularGauge(gaugeModel, currentIniFileModel, workingImage);
         Dimension size = new Dimension(READOUT_GAUGE_SIZE, READOUT_GAUGE_SIZE);
         radial.setPreferredSize(size);
         radial.setMinimumSize(size);
         radial.setMaximumSize(size);
         boolean exprTitle = gaugeModel.getTitleValue().isExpression() && TsStringFunction.containsStringFunction(gaugeModel.getTitle());
         boolean exprUnits = gaugeModel.getUnitsValue().isExpression() && TsStringFunction.containsStringFunction(gaugeModel.getUnits());
-        if (exprTitle) radial.setTitle("");
-        if (exprUnits) radial.setUnitString("");
+        if (exprTitle) {
+            radial.setTitle("");
+        }
+        if (exprUnits) {
+            radial.setUnitString("");
+        }
         double initialVal = SensorCentral.getInstance().getValue(gaugeModel.getChannel());
-        if (!Double.isNaN(initialVal)) radial.setValue(initialVal);
+        radial.setValue(initialVal);
         gaugeReadoutEntries.add(new GaugeReadoutEntry(radial, gaugeModel.getChannel(), gaugeModel.getName(), exprTitle || exprUnits));
         return radial;
     }
@@ -841,5 +921,113 @@ public class CalibrationDialogWidget {
 
     public JPanel getContentPane() {
         return contentPane;
+    }
+
+    /** Viewport presentation shared by the tuning tab and its visual sandbox. */
+    public JPanel getViewportPane() {
+        return viewportPane;
+    }
+
+    /** The framed form excludes the unused tiled viewport background. */
+    JComponent getPanelFrame() {
+        return viewportPane.frame;
+    }
+
+    private static class DialogViewport extends ScrollablePanel {
+        private static final int MARGIN = 8;
+        private final JPanel frame = new JPanel(new BorderLayout());
+        private int preferredWidth = -1;
+        private boolean fillWidth;
+
+        DialogViewport(JPanel content) {
+            setLayout(null);
+            frame.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.GRAY),
+                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+            frame.add(content, BorderLayout.CENTER);
+            add(frame);
+            content.addContainerListener(new java.awt.event.ContainerAdapter() {
+                @Override
+                public void componentAdded(java.awt.event.ContainerEvent e) {
+                    preferredWidth = -1;
+                }
+
+                @Override
+                public void componentRemoved(java.awt.event.ContainerEvent e) {
+                    preferredWidth = -1;
+                }
+            });
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            Dimension size = frame.getPreferredSize();
+            return new Dimension(size.width + 2 * MARGIN, size.height + 2 * MARGIN);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            // Paint the unused area below short forms as well as their side margins.
+            return getParent() instanceof JViewport && getParent().getHeight() >= getPreferredSize().height;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D mosaic = (Graphics2D) g.create();
+            try {
+                java.awt.geom.Area unused = new java.awt.geom.Area(new Rectangle(0, 0, getWidth(), getHeight()));
+                unused.subtract(new java.awt.geom.Area(frame.getBounds()));
+                mosaic.clip(unused);
+                mosaic.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color background = getBackground();
+                boolean dark = background.getRed() + background.getGreen() + background.getBlue() < 384;
+                mosaic.setColor(dark ? Color.WHITE : new Color(45, 58, 68));
+                final double radius = 22;
+                final double rowHeight = Math.sqrt(3) * radius;
+                Rectangle clip = mosaic.getClipBounds();
+                int firstColumn = (int) Math.floor(clip.x / (1.5 * radius)) - 1;
+                int lastColumn = (int) Math.ceil((clip.x + clip.width) / (1.5 * radius)) + 1;
+                int firstRow = (int) Math.floor(clip.y / rowHeight) - 1;
+                int lastRow = (int) Math.ceil((clip.y + clip.height) / rowHeight) + 1;
+                for (int column = firstColumn; column <= lastColumn; column++) {
+                    for (int row = firstRow; row <= lastRow; row++) {
+                        double centerX = column * 1.5 * radius;
+                        double centerY = (row + ((column & 1) == 0 ? 0 : 0.5)) * rowHeight;
+                        java.awt.geom.Path2D hexagon = new java.awt.geom.Path2D.Double();
+                        for (int corner = 0; corner < 6; corner++) {
+                            double angle = corner * Math.PI / 3;
+                            double x = centerX + radius * Math.cos(angle);
+                            double y = centerY + radius * Math.sin(angle);
+                            if (corner == 0) {
+                                hexagon.moveTo(x, y);
+                            } else {
+                                hexagon.lineTo(x, y);
+                            }
+                        }
+                        hexagon.closePath();
+                        int shade = Math.floorMod(column * 31 + row * 17, 7);
+                        mosaic.setComposite(AlphaComposite.SrcOver.derive(0.018f + shade * 0.006f));
+                        mosaic.fill(hexagon);
+                        mosaic.setComposite(AlphaComposite.SrcOver.derive(0.07f));
+                        mosaic.draw(hexagon);
+                    }
+                }
+            } finally {
+                mosaic.dispose();
+            }
+        }
+
+        @Override
+        public void doLayout() {
+            if (preferredWidth < 0) {
+                preferredWidth = frame.getPreferredSize().width;
+            }
+            int availableWidth = Math.max(0, getWidth() - 2 * MARGIN);
+            int width = fillWidth ? availableWidth : Math.min(preferredWidth, availableWidth);
+            frame.setBounds((getWidth() - width) / 2, MARGIN, width,
+                frame.getPreferredSize().height);
+            frame.doLayout();
+        }
     }
 }

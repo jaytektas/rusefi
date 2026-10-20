@@ -53,6 +53,7 @@
 #include "gppwm.h"
 #include "date_stamp.h"
 #include "rusefi_lua.h"
+#include "lua_heap.h"
 #include "buttonshift.h"
 #include "start_stop.h"
 #include "dynoview.h"
@@ -217,6 +218,8 @@ char * getPinNameByAdcChannel(const char *msg, adc_channel_e hwChannel, char *bu
 #if HAL_USE_ADC
 	if (!isAdcChannelValid(hwChannel)) {
 		snprintf(buffer, bufferSize, "NONE");
+	} else if (isAdcChannelOffChip(hwChannel)) {
+		snprintf(buffer, bufferSize, "External ADC%d", hwChannel - EFI_ADC_0);
 	} else {
 		const char *name = portname(getAdcChannelPort(msg, hwChannel));
 		snprintf(buffer, bufferSize, "%s%d", name ? name : "null", getAdcChannelPin(hwChannel));
@@ -448,6 +451,10 @@ void commonInitEngineController() {
 
 	initGpPwm();
 
+#ifdef MODULE_FUEL_PUMP
+	initFuelPump();
+#endif
+
 #if EFI_IDLE_CONTROL
 	startIdleThread();
 #endif /* EFI_IDLE_CONTROL */
@@ -545,17 +552,34 @@ static bool validateConfig(const engine_configuration_s* previousConfiguration) 
   }
 #endif
 
-  if (engineConfiguration->knockFrequency != 0 && engineConfiguration->knockFrequency < 100) {
+  if (engineConfiguration->enableSoftwareKnock && engineConfiguration->knockFrequency != 0 && engineConfiguration->knockFrequency < 100) {
     // todo: migrate from hard error to soft error
 		criticalError("knock frequency setting uses HZ not KHz: %f", engineConfiguration->knockFrequency);
 		return false;
   }
 
+#ifndef EFI_SOFTWARE_KNOCK
+  if (engineConfiguration->enableSoftwareKnock) {
+    // [tag:user_facing_ini_labels] Match the Knock sensing control in TunerStudio.
+    criticalError("Knock sensing is enabled but this firmware does not support software knock");
+    return false;
+  }
+#endif // EFI_SOFTWARE_KNOCK
 
   // the only step which is allowed to modify configuration - everything else in this method is read-only validation
   applyDefaultsOrFixAfterBurn(previousConfiguration);
+	if (!(engineConfiguration->injector.flow > 0) || !std::isfinite(engineConfiguration->injector.flow)) {
+		criticalError("Primary injector flow must be positive");
+		return false;
+	}
+	if (engineConfiguration->enableStagedInjection &&
+		(!(engineConfiguration->injectorSecondary.flow > 0) || !std::isfinite(engineConfiguration->injectorSecondary.flow))) {
+		criticalError("Secondary injector flow must be positive when staged injection is enabled");
+		return false;
+	}
 	if (engineConfiguration->cylindersCount > MAX_CYLINDER_COUNT) {
-		criticalError("Invalid cylinder count: %d", engineConfiguration->cylindersCount);
+		// [tag:user_facing_ini_labels] Match the engine setting label in tunerstudio.template.ini.
+		criticalError("Invalid Number of cylinders: %d", engineConfiguration->cylindersCount);
 		return false;
 	}
 #if EFI_PROD_CODE && (BOARD_MC33810_COUNT > 0)
@@ -574,7 +598,8 @@ static bool validateConfig(const engine_configuration_s* previousConfiguration) 
 
 #endif // EFI_PROD_CODE && (BOARD_MC33810_COUNT > 0)
 	if (engineConfiguration->adcVcc > 5.0f || engineConfiguration->adcVcc < 1.0f) {
-    criticalError("Invalid adcVcc: %f", engineConfiguration->adcVcc);
+		// [tag:user_facing_ini_labels] Match the hardware setting label in tunerstudio.template.ini.
+    criticalError("Invalid ADC vRef voltage: %f", engineConfiguration->adcVcc);
 		return false;
 	}
 
@@ -655,7 +680,10 @@ static bool validateConfig(const engine_configuration_s* previousConfiguration) 
 // todo: huh? why does this not work on CI?	ensureArrayIsAscendingOrDefault("Dwell Correction Voltage", engineConfiguration->dwellVoltageCorrVoltBins);
 
 #if EFI_ENGINE_CONTROL
-	ensureArrayIsAscending("MAF transfer function", config->mafDecodingBins);
+	// Both analog MAF inputs use this curve, regardless of the fuel algorithm.
+	if (isAdcChannelValid(engineConfiguration->mafAdcChannel) || isAdcChannelValid(engineConfiguration->maf2AdcChannel)) {
+		ensureArrayIsAscending("MAF transfer function", config->mafDecodingBins);
+	}
 
 	// Cranking tables
 	ensureArrayIsAscending("Cranking fuel mult", config->crankingFuelBins);
@@ -780,6 +808,7 @@ void commonEarlyInit() {
 #endif
 
 #if EFI_LUA
+	luaHeapInit();
 	startLua();
 #endif // EFI_LUA
 

@@ -2,6 +2,9 @@
 
 #include "knock_logic.h"
 
+using ::testing::StrEq;
+using ::testing::ThrowsMessage;
+
 struct MockKnockController : public KnockControllerBase {
 	float getKnockThreshold() const override {
 		// Knock threshold of 20dBv
@@ -17,6 +20,55 @@ struct MockKnockController : public KnockControllerBase {
 TEST(Knock, frequencyApproximation) {
   // that's first harmonic while default is knockDetectionUseDoubleFrequency for second harmonic
   ASSERT_NEAR(7.3456, bore2frequency(78/*mm*/), EPS2D);
+}
+
+TEST(Knock, InvalidFrequencyIsIgnoredWhenDisabled) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->enableSoftwareKnock = false;
+	engineConfiguration->knockFrequency = 7.5f;
+
+	EXPECT_TRUE(validateConfigOnStartUpOrBurn());
+}
+
+TEST(Knock, InvalidFrequencyIsRejectedWhenEnabled) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->enableSoftwareKnock = true;
+	engineConfiguration->knockFrequency = 7.5f;
+
+	EXPECT_FATAL_ERROR(validateConfigOnStartUpOrBurn());
+}
+
+TEST(Knock, SensingDisabledIsAcceptedOnBurn) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->enableSoftwareKnock = false;
+
+	EXPECT_TRUE(validateConfigOnStartUpOrBurn(false));
+}
+
+TEST(Knock, SensingEnabledOnStartup) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->enableSoftwareKnock = true;
+
+	for (float frequency : {0.0f, 7500.0f}) {
+		engineConfiguration->knockFrequency = frequency;
+		EXPECT_THAT([] { validateConfigOnStartUpOrBurn(); },
+			ThrowsMessage<std::logic_error>(StrEq(
+				"Knock sensing is enabled but this firmware does not support software knock")));
+		EXPECT_TRUE(engineConfiguration->enableSoftwareKnock);
+	}
+}
+
+TEST(Knock, SensingEnabledOnBurn) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->enableSoftwareKnock = true;
+
+	for (float frequency : {0.0f, 7500.0f}) {
+		engineConfiguration->knockFrequency = frequency;
+		EXPECT_THAT([] { validateConfigOnStartUpOrBurn(false); },
+			ThrowsMessage<std::logic_error>(StrEq(
+				"Knock sensing is enabled but this firmware does not support software knock")));
+		EXPECT_TRUE(engineConfiguration->enableSoftwareKnock);
+	}
 }
 
 TEST(Knock, Retards) {

@@ -5,7 +5,7 @@ HW_LAYER_INC=	$(PROJECT_DIR)/hw_layer $(PROJECT_DIR)/hw_layer/adc \
 	$(PROJECT_DIR)/hw_layer/microsecond_timer \
 	$(PROJECT_DIR)/hw_layer/atwinc1500 \
 
-HW_INC = hw_layer/$(CPU_HWLAYER) \
+HW_INC = $(CPU_HWLAYER_DIR) \
 	$(PROJECT_DIR)/hw_layer/ports \
 
 
@@ -22,7 +22,9 @@ HW_LAYER_CPP = \
 	$(PROJECT_DIR)/hw_layer/kline.cpp \
 	$(PROJECT_DIR)/hw_layer/mmc_card.cpp \
 	$(PROJECT_DIR)/hw_layer/mmc_card_util.cpp \
+	$(PROJECT_DIR)/hw_layer/past_codes_storage.cpp \
 	$(PROJECT_DIR)/hw_layer/adc/adc_inputs.cpp \
+	$(PROJECT_DIR)/hw_layer/adc/adc_offchip.cpp \
 	$(PROJECT_DIR)/hw_layer/adc/adc_onchip.cpp \
 	$(PROJECT_DIR)/hw_layer/adc/adc_onchip_fast.cpp \
 	$(PROJECT_DIR)/hw_layer/adc/adc_onchip_slow.cpp \
@@ -46,5 +48,5 @@ endif
 #
 # '-include' is a magic kind of 'include' which would survive if file to be included is not found
 #
--include $(PROJECT_DIR)/hw_layer/$(CPU_HWLAYER)/hw_ports.mk
+-include $(CPU_HWLAYER_DIR)/hw_ports.mk
 

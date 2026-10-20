@@ -86,7 +86,7 @@ public class SdCardFieldsContent {
         return getLine(configField, prefix, namePrefix, prefix + name, expression, isPtr, conditional, currentPosition, perFieldWithStructuresIterator, structureStartingTsPosition);
     }
 
-    private static String getLine(ConfigField configField, String prefix, String outputNamePrefix, String name, String expression, Boolean isPtr, String conditional, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator, int structureStartingTsPosition) {
+    private String getLine(ConfigField configField, String prefix, String outputNamePrefix, String name, String expression, Boolean isPtr, String conditional, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator, int structureStartingTsPosition) {
         String humanName = DataLogConsumer.getHumanGaugeName(outputNamePrefix, prefix, configField, "");
 
         String categoryStr = configField.getCategory();
@@ -117,6 +117,17 @@ public class SdCardFieldsContent {
                 categoryStr +
                 "},\n";
         } else {
+            float scale = OutputScale.getAdditionalScale(configField);
+            float translation = OutputScale.getTranslation(configField);
+            if (scale != 1 || translation != 0) {
+                if (categoryStr.isEmpty()) {
+                    categoryStr = ", \"none\"";
+                }
+                categoryStr += ", " + scale + "f";
+                if (translation != 0) {
+                    categoryStr += ", " + translation + "f";
+                }
+            }
             return
                 "\t{" +
                 expression + (isPtr ? "->" : ".") + name +

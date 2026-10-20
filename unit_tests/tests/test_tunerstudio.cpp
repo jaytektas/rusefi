@@ -4,6 +4,8 @@
 #include "tunerstudio_impl.h"
 #include "binary_mlg_logging.h"
 #include "mlg_field.h"
+#include "basic_configuration.h"
+#include "flash_main.h"
 
 TEST(TunerStudioState, EngineStateLogField) {
 	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
@@ -112,7 +114,7 @@ TEST_F(TunerStudioEngineState, DfcoSetsDecelerationInEveryMode) {
 	Sensor::setMockValue(SensorType::Rpm, 2000);
 	Sensor::setMockValue(SensorType::Clt, 90);
 	Sensor::setMockValue(SensorType::Map, 20);
-	for (auto mode : {AE_MODE_MS_ADDER, AE_MODE_PERCENT_ADDER, AE_MODE_PREDICTIVE_MAP}) {
+	for (auto mode : {AE_MODE_MS_ADDER, AE_MODE_PERCENT_ADDER, AE_MODE_PREDICTIVE_MAP, AE_MODE_LUA}) {
 		engineConfiguration->accelEnrichmentMode = mode;
 		Sensor::setMockValue(SensorType::DriverThrottleIntent, 0);
 		engine->module<DfcoController>()->update();
@@ -123,6 +125,21 @@ TEST_F(TunerStudioEngineState, DfcoSetsDecelerationInEveryMode) {
 		ASSERT_FALSE(engine->module<DfcoController>()->cutFuel());
 		EXPECT_EQ(0x01, readState());
 	}
+}
+
+TEST_F(TunerStudioEngineState, LuaUsesAppliedMassInsteadOfTpsHistory) {
+	engineConfiguration->accelEnrichmentMode = AE_MODE_LUA;
+	auto& ae = engine->module<TpsAccelEnrichment>();
+	ae->isAboveAccelThreshold = true;
+	ae->isBelowDecelThreshold = true;
+	engine->engineState.tpsAccelEnrich = 10;
+	EXPECT_EQ(0x01, readState());
+	ae->setLuaEnrichment(0.001f);
+	ae->getLuaEnrichment();
+	EXPECT_EQ(0x11, readState());
+	advanceTimeUs(201000);
+	ae->getLuaEnrichment();
+	EXPECT_EQ(0x01, readState());
 }
 
 static uint8_t st5TestBuffer[16000];
@@ -264,6 +281,39 @@ TEST(TunerstudioCommands, burnFixRunsAfterCrc) {
 	EXPECT_EQ(actualCrc, expectedCrc);
 	EXPECT_FALSE(channel.settingsBurnPending);
 	EXPECT_EQ(engineConfiguration->mapExpAverageAlpha, 1);
+}
+
+TEST(TunerstudioCommands, UnassignOutputsImmediateBurnPersistenceBehavior) {
+	// [tag:unassign_outputs] Persist independently of the preset refresh's suppressed TS Burn.
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	BufferTsChannel channel;
+	TunerStudio ts;
+	auto assignedOutput = static_cast<output_pin_e>(Gpio::A0);
+	engineConfiguration->fanPin = assignedOutput;
+	engineConfiguration->injectionPins[0] = assignedOutput;
+	const auto configurationVersion = engine->globalConfigurationVersion;
+	resetConfigurationWriteRequestCountForUnitTest();
+
+	ASSERT_TRUE(handleBasicConfigurationAction(static_cast<uint16_t>(BasicConfigurationAction::UnassignOutputs)));
+	EXPECT_EQ(static_cast<output_pin_e>(0), engineConfiguration->fanPin);
+	EXPECT_EQ(static_cast<output_pin_e>(0), engineConfiguration->injectionPins[0]);
+	EXPECT_EQ(configurationVersion, engine->globalConfigurationVersion);
+	EXPECT_EQ(1, getConfigurationWriteRequestCountForUnitTest());
+
+	// TunerStudio's preset flow may immediately send Burn and then the settings CRC.
+	// The refresh timer suppresses the TS Burn, so the action must queue its own
+	// non-forced persistence request while leaving hardware activation to reboot.
+	ts.handleWriteChunkCommand(&channel, TS_PAGE_SETTINGS,
+		offsetof(engine_configuration_s, fanPin), sizeof(assignedOutput), &assignedOutput);
+	EXPECT_EQ(static_cast<output_pin_e>(0), engineConfiguration->fanPin);
+	ts.handleBurnCommand(&channel, TS_PAGE_SETTINGS);
+	ts.handleCrc32Check(&channel, TS_PAGE_SETTINGS, 0, sizeof(persistent_config_s));
+
+	EXPECT_FALSE(channel.settingsBurnPending);
+	EXPECT_EQ(configurationVersion, engine->globalConfigurationVersion);
+	EXPECT_EQ(static_cast<output_pin_e>(0), engineConfiguration->fanPin);
+	EXPECT_EQ(static_cast<output_pin_e>(0), engineConfiguration->injectionPins[0]);
+	EXPECT_EQ(1, getConfigurationWriteRequestCountForUnitTest());
 }
 
 TEST(TunerstudioCommands, burnFixRunsAfterTimeout) {

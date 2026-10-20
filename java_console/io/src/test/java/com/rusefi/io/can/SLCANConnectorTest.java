@@ -24,6 +24,60 @@ class SLCANConnectorTest {
     }
 
     @Test
+    void weActSetupUsesCanableVersionBarriers() throws Exception {
+        FakeSerial serial = new FakeSerial(true);
+        serial.banner = "WeAct Studio V1.0.0.3_bb264e71";
+        try (SLCANConnector connector = new SLCANConnector("fake", 6, () -> serial)) {
+            connector.open(new CanAddress(0x720, false));
+            assertEquals(Arrays.asList("C", "V", "S6", "V", "A1", "V", "O", "V"), serial.commands);
+            serial.reply("t7202AABB\r");
+            assertEquals(new ClassicCanFrame(new CanAddress(0x720, false), new byte[]{(byte) 0xaa, (byte) 0xbb}),
+                connector.receive(100).get());
+        }
+    }
+
+    @Test
+    void acknowledgedWeActStillUsesVersionBarriersAndEnablesRetransmission() throws Exception {
+        FakeSerial serial = new FakeSerial(true);
+        serial.banner = "WeAct Studio V1.0.0.6_4fa52575";
+        serial.acknowledgeSetup = true;
+        try (SLCANConnector connector = new SLCANConnector("fake", 6, () -> serial)) {
+            connector.open(new CanAddress(0x720, false));
+            assertEquals(Arrays.asList("C", "V", "S6", "V", "A1", "V", "O", "V"), serial.commands);
+            assertTrue(serial.automaticRetransmission);
+        }
+    }
+
+    @Test
+    void weActEnablesArbitrationRetriesBeforeSendingOnContendedBus() throws Exception {
+        FakeSerial serial = new FakeSerial(true);
+        serial.banner = "WeAct Studio V1.0.0.6_4fa52575";
+        serial.contended = true;
+        try (SLCANConnector connector = new SLCANConnector("fake", 6, () -> serial)) {
+            connector.open(new CanAddress(0x720, false));
+            connector.send(new ClassicCanFrame(new CanAddress(0x710, false),
+                new byte[]{0x30, 0, 0}));
+            assertTrue(serial.automaticRetransmission);
+            assertTrue(serial.commands.indexOf("A1") < serial.commands.indexOf("O"));
+            assertEquals(new ClassicCanFrame(new CanAddress(0x720, false), new byte[]{1, (byte) 0xaa}),
+                connector.receive(100).get());
+        }
+    }
+
+    @Test
+    void rejectedWeActRetransmissionSetupStopsBeforeOpeningCan() {
+        FakeSerial serial = new FakeSerial(true);
+        serial.banner = "WeAct Studio V1.0.0.6_4fa52575";
+        serial.rejectAutomaticRetransmission = true;
+        SLCANConnector connector = new SLCANConnector("fake", 6, () -> serial);
+        IOException failure = assertThrows(IOException.class,
+            () -> connector.open(new CanAddress(0x720, false)));
+        assertTrue(failure.getMessage().contains("A1"));
+        assertFalse(serial.commands.contains("O"));
+        assertTrue(serial.isClosed());
+    }
+
+    @Test
     void lawicelSetupAndReceivePreservePartialLinesAndFilterBusTraffic() throws Exception {
         FakeSerial serial = new FakeSerial(false);
         try (SLCANConnector connector = new SLCANConnector("fake", 6, () -> serial)) {
@@ -52,7 +106,12 @@ class SLCANConnectorTest {
         final IncomingDataBuffer buffer = new IncomingDataBuffer("SLCAN test", getStreamStats());
         final List<String> commands = new ArrayList<>();
         final boolean canable;
+        String banner = "16e7497-dirty github.com/normaldotcom/canable2.git";
         boolean rejectOpen;
+        boolean contended;
+        boolean automaticRetransmission;
+        boolean rejectAutomaticRetransmission;
+        boolean acknowledgeSetup;
 
         FakeSerial(boolean canable) {
             this.canable = canable;
@@ -75,11 +134,20 @@ class SLCANConnectorTest {
         public void write(byte[] bytes) {
             String command = new String(bytes, StandardCharsets.US_ASCII).trim();
             commands.add(command);
-            if (command.equals("V")) {
-                reply(canable ? "16e7497-dirty github.com/normaldotcom/canable2.git\r" : "V1220\r");
+            if (command.equals("A1")) {
+                if (rejectAutomaticRetransmission) {
+                    reply("\u0007");
+                } else {
+                    automaticRetransmission = true;
+                    reply("\r");
+                }
+            } else if (command.startsWith("t") && contended) {
+                if (automaticRetransmission) reply("\rt720201AA\r");
+            } else if (command.equals("V")) {
+                reply(canable ? banner + "\r" : "V1220\r");
             } else if (rejectOpen && command.equals("O")) {
                 reply("\u0007");
-            } else if (!canable) {
+            } else if (!canable || acknowledgeSetup) {
                 reply("\r");
             }
         }
@@ -104,7 +172,8 @@ class SLCANConnectorTest {
     @Test
     void ignoresAcksRtrFdAndMalformedFrames() {
         for (String value : new String[]{"", "z", "Z", "r1238", "d1230", "tFFF0", "TFFFFFFFF0",
-                "t1239", "t1232AA", "t1231GG", "t123100123", "t123100ZZZZ"}) {
+                "t1239", "t1232AA", "t1231GG", "t123100123", "t123100ZZZZ",
+                "&t1230", "$t1230"}) {
             assertFalse(SLCANConnector.decode(value).isPresent(), value);
         }
     }
@@ -113,6 +182,7 @@ class SLCANConnectorTest {
     void recognizesLawicelAndActualCanableBanner() {
         assertTrue(SLCANConnector.isVersion("V1220"));
         assertTrue(SLCANConnector.isVersion("16e7497-dirty github.com/normaldotcom/canable2.git"));
+        assertTrue(SLCANConnector.isVersion("WeAct Studio V1.0.0.3_bb264e71"));
         assertFalse(SLCANConnector.isVersion("V"));
         assertFalse(SLCANConnector.isVersion("rusEFI master"));
     }

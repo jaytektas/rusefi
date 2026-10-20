@@ -26,7 +26,7 @@ DDEFS += -DFIRMWARE_ID=\"uaefi\" $(VAR_DEF_ENGINE_TYPE)
 #Knock is available on F4 and F7
 ifeq ($(PROJECT_CPU),ARCH_STM32H7)
 	# Default H743 linker script is not compatible
-	LDSCRIPT = $(PROJECT_DIR)/hw_layer/ports/stm32/stm32h7/STM32H723xG_ITCM64k_AXI_NC.ld
+	LDSCRIPT = $(CPU_HWLAYER_DIR)/STM32H723xG_ITCM64k_AXI_NC.ld
 	# Do not use HSE autodetection
 	DDEFS += -DSTM32_HSECLK=20000000
 	DDEFS += -DENABLE_AUTO_DETECT_HSE=FALSE
@@ -67,8 +67,6 @@ include $(BOARDS_DIR)/hellen/hellen-common100.mk
 DDEFS += -DWITH_LUA_CONSUMPTION=FALSE
 DDEFS += -DWITH_LUA_PID=FALSE
 DDEFS += -DWITH_LUA_STOP_ENGINE=FALSE
-
-DDEFS += $(PRIMARY_COMMUNICATION_PORT_USART2)
 
 ifeq ($(PROJECT_CPU),ARCH_STM32F7)
  DDEFS += -DUSB_DESCRIPTOR_STRING_CONTENT="'r', 0, 'u', 0, 's', 0, 'E', 0, 'F', 0, 'I', 0, ' ', 0, 'u', 0, 'a', 0, 'E', 0, 'F', 0, 'I', 0, ' ', 0, 'P', 0, 'R', 0, 'O', 0"

@@ -106,8 +106,8 @@ void miataNAcommonEngineSettings() {
 //	engineConfiguration->totalGearsCount = 5;
 
 	engineConfiguration->rpmHardLimit = 7200;
-	engineConfiguration->enableFan1WithAc = true;
-	engineConfiguration->enableFan2WithAc = true;
+	engineConfiguration->fan1AcMode = fan_ac_mode_e::Relay;
+	engineConfiguration->fan2AcMode = fan_ac_mode_e::Relay;
 
 	engineConfiguration->tachPulsePerRev = 2;
 
@@ -254,7 +254,12 @@ void setMiataNA6_MAP_Frankenso() {
 #if defined(HW_NUCLEO_F767) || defined(HW_NUCLEO_H743)
     // default PA1-6 ADC pins conflict with the ethernet module on F767, used on HW CI
     engineConfiguration->afr.hwChannel = EFI_ADC_36;
+#if defined(HARDWARE_CI) && defined(HW_NUCLEO_F767)
+    // Keep the PC3 fixture on the fast ADC channel selected at startup.
+    engineConfiguration->map.sensor.hwChannel = EFI_ADC_13;
+#else
     engineConfiguration->map.sensor.hwChannel = EFI_ADC_39;
+#endif
     engineConfiguration->acSwitch = Gpio::Unassigned;
     engineConfiguration->camInputs[0] = Gpio::E0;
 #endif

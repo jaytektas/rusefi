@@ -22,6 +22,8 @@
 
 #if HAL_USE_ADC
 
+#include "adc_onchip.h"
+
 /* HW channels count per ADC */
 constexpr size_t adcChannelCount = 16;
 constexpr size_t adcAux1ChannelCount = 2;
@@ -266,43 +268,41 @@ static slowAdcState_t slowAdcGetNextState(slowAdcState_t state)
 
 static slowAdcState_t slowAdcState = convertPrimary;
 
-static void slowAdcEndCB(ADCDriver *adcp) {
-	if (adcIsBufferComplete(adcp)) {
-		chSysLockFromISR();
-		// Switch state to ready to allow starting new conversion from here
-		adcp->state = ADC_READY;
-		// get next state
-		slowAdcState = slowAdcGetNextState(slowAdcState);
-		// A scan is complete only after the final auxiliary conversion has
-		// completed and the state machine wraps back to the primary group.
-		if (slowAdcState == convertPrimary) {
-			engine->outputChannels.slowAdcScanCount++;
-		}
-		switch (slowAdcState) {
-		case convertPrimary:
-			#ifdef ADC_MUX_PIN
-			muxControl.setValue(0, /*force*/true);
-			#endif
-			adcStartConversionI(&EFI_SLOW_ADC, &convGroupSlow, (adcsample_t *)slowSampleBuffer, SLOW_ADC_OVERSAMPLE);
-			break;
-		#ifdef ADC_MUX_PIN
-		case convertMuxed:
-			muxControl.setValue(1, /*force*/true);
-			// convert second half
-			adcStartConversionI(&EFI_SLOW_ADC, &convGroupSlow, (adcsample_t *)slowSampleBufferMuxed, SLOW_ADC_OVERSAMPLE);
-			break;
-		#endif
-		case convertAux:
-			adcSTM32DisableVBATE();
-			adcStartConversionI(&EFI_SLOW_ADC, &aux1ConvGroup, (adcsample_t *)aux1SensorSamples, auxSensorOversample);
-			break;
-		case convertAux2:
-			adcSTM32EnableVBATE();
-			adcStartConversionI(&EFI_SLOW_ADC, &aux2ConvGroup, (adcsample_t *)aux2SensorSamples, auxSensorOversample);
-			break;
-		}
-		chSysUnlockFromISR();
+static void slowAdcEndCB(ADCDriver *) {
+	// All slow ADC groups are linear, so this callback only runs after a full
+	// conversion. ChibiOS has already returned the driver to ADC_READY here.
+	chSysLockFromISR();
+	// get next state
+	slowAdcState = slowAdcGetNextState(slowAdcState);
+	// A scan is complete only after the final auxiliary conversion has
+	// completed and the state machine wraps back to the primary group.
+	if (slowAdcState == convertPrimary) {
+		engine->outputChannels.slowAdcScanCount++;
 	}
+	switch (slowAdcState) {
+	case convertPrimary:
+		#ifdef ADC_MUX_PIN
+		muxControl.setValue(0, /*force*/true);
+		#endif
+		adcStartConversionI(&EFI_SLOW_ADC, &convGroupSlow, (adcsample_t *)slowSampleBuffer, SLOW_ADC_OVERSAMPLE);
+		break;
+	#ifdef ADC_MUX_PIN
+	case convertMuxed:
+		muxControl.setValue(1, /*force*/true);
+		// convert second half
+		adcStartConversionI(&EFI_SLOW_ADC, &convGroupSlow, (adcsample_t *)slowSampleBufferMuxed, SLOW_ADC_OVERSAMPLE);
+		break;
+	#endif
+	case convertAux:
+		adcSTM32DisableVBATE();
+		adcStartConversionI(&EFI_SLOW_ADC, &aux1ConvGroup, (adcsample_t *)aux1SensorSamples, auxSensorOversample);
+		break;
+	case convertAux2:
+		adcSTM32EnableVBATE();
+		adcStartConversionI(&EFI_SLOW_ADC, &aux2ConvGroup, (adcsample_t *)aux2SensorSamples, auxSensorOversample);
+		break;
+	}
+	chSysUnlockFromISR();
 }
 #endif
 
@@ -375,16 +375,16 @@ static void slowAdcEnableDisableChannel(adc_channel_e hwChannel, bool en)
 		return;
 	}
 
-	/* TODO: following is correct for STM32 ADC1/2.
-	 * ADC3 has another input to gpio mapping
-	 * and should be handled separately */
-	uint32_t channelAdcIndex = hwChannel - EFI_ADC_0;
+	int channelAdcIndex = getAdcInternalChannel(EFI_SLOW_ADC.adc, hwChannel);
+	if (channelAdcIndex < 0 || channelAdcIndex >= static_cast<int>(adcChannelCount)) {
+		return;
+	}
 	// Switch disabled channel to internal Vrefint channel
 	adcConversionGroupSetSeqInput(&convGroupSlow, channelAdcIndex, en ? channelAdcIndex : 17);
 }
 
 AdcToken enableFastAdcChannel(const char*, adc_channel_e hwChannel) {
-	if (!isAdcChannelValid(hwChannel)) {
+	if (!isAdcChannelOnChip(hwChannel)) {
 		return invalidAdcToken;
 	}
 
@@ -406,10 +406,9 @@ adcsample_t getFastAdc(AdcToken token) {
 
 #ifdef EFI_SOFTWARE_KNOCK
 
-static void knockCompletionCallback(ADCDriver* adcp) {
-	if (adcIsBufferComplete(adcp)) {
-		onKnockSamplingComplete();
-	}
+static void knockCompletionCallback(ADCDriver*) {
+	// Knock conversions are linear, so the callback is the completion event.
+	onKnockSamplingComplete();
 
 	assertInterruptPriority(__func__, EFI_IRQ_ADC_PRIORITY);
 }
@@ -537,6 +536,10 @@ void portInitAdc() {
 #ifdef EFI_SOFTWARE_KNOCK
 	adcStart(&KNOCK_ADC, nullptr);
 #endif // EFI_SOFTWARE_KNOCK
+
+#if EFI_ADC3_SLOW
+	initAdc3Slow();
+#endif
 }
 
 #endif // HAL_USE_ADC

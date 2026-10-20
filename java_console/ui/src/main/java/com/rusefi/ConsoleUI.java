@@ -2,6 +2,7 @@ package com.rusefi;
 
 import com.devexperts.logging.FileLogger;
 import com.devexperts.logging.Logging;
+import com.formdev.flatlaf.FlatClientProperties;
 import com.opensr5.ConfigurationImage;
 import com.opensr5.ini.IniFileModel;
 import com.rusefi.autodetect.PortDetector;
@@ -22,6 +23,7 @@ import com.rusefi.ui.basic.SingleAsyncJobExecutor;
 import com.rusefi.ui.basic.StatusPanelWithProgressBar;
 import com.rusefi.ui.basic.TuneManagementTab;
 import com.rusefi.ui.console.MainFrame;
+import com.rusefi.ui.obd.ObdCodesPane;
 import com.rusefi.ui.console.TabbedPanel;
 import com.rusefi.ui.engine.EngineSnifferPanel;
 import com.rusefi.ui.lua.LuaScriptPanel;
@@ -29,6 +31,7 @@ import com.rusefi.ui.plugins.ConsoleTabProvider;
 import com.rusefi.ui.util.JustOneInstance;
 import com.rusefi.ui.widgets.ConnectionStatusIcon;
 import com.rusefi.ui.widgets.StatusPanel;
+import com.rusefi.ui.widgets.tune.CalibrationPanelWorkspace;
 import com.rusefi.ui.wizard.WizardCatalog;
 import com.rusefi.ui.wizard.WizardContainer;
 import com.rusefi.ui.wizard.WizardStep;
@@ -46,6 +49,8 @@ import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import com.rusefi.ui.InitOnFirstPaintPanel;
+import com.rusefi.ui.llm.LLMTab;
+import java.nio.file.Paths;
 import com.rusefi.ui.basic.LoadTuneHelper;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -86,6 +91,8 @@ public class ConsoleUI {
 
     private final TabbedPanel tabbedPane;
     private final String port;
+
+    private LLMTab llmTab;
 
     public final UIContext uiContext;
     private final ConnectivityContext connectivityContext;
@@ -480,6 +487,13 @@ console live data tab is broken #8402
                 lazyTuneAction(LoadTuneHelper.LOAD_TUNE_TEXT, buildTuning, () -> tuningHolder[0].getLoadTuneAction()),
                 lazyTuneAction(LoadTuneHelper.SAVE_TUNE_TEXT, buildTuning, () -> tuningHolder[0].getSaveTuneAction()));
 
+            // Restore detached calibration windows even when another tab was selected at exit.
+            if (getConfig().getRoot().getChild("tuning").getChild(
+                    CalibrationPanelWorkspace.CONFIG_KEY).getIntProperty("count", 0) > 0) {
+                buildTuning.run();
+                tuningHolder[0].restoreDetachedPanels(mainFrame.getFrame().getFrame());
+            }
+
             if (UiProperties.isKnockAnalyzerEnabled()) {
                 tabbedPane.addTab("Knock Analyzer", new KnockPane(uiContext).getContent());
             }
@@ -526,6 +540,11 @@ console live data tab is broken #8402
                 devicePane.triggerAutoUpdate();
             });
 
+            if (!isOffline) {
+                // added after the other tabs so it does not shift their saved TAB_INDEX
+                tabbedPane.addTab(ObdCodesPane.TITLE, new ObdCodesPane().getContent());
+            }
+
             addCustomTabs();
 
             AtomicReference<AvailableHardware> tuneHardware = new AtomicReference<>();
@@ -565,6 +584,15 @@ console live data tab is broken #8402
             tabbedPane.addTab("Logs Manager", tabbedPane.logsManager.getContent());
         }
 
+        if (!isOffline && !linkManager.isLogViewer()) {
+            tabbedPane.addTab("AI Troubleshooting", new InitOnFirstPaintPanel() {
+                @Override protected JPanel createContent() {
+                    llmTab = new LLMTab(Paths.get(
+                            System.getProperty("user.home"), ".rusefi", "llm-access"), linkManager);
+                    return llmTab.getContent();
+                }
+            }.getContent());
+        }
 
         MessagesCentral.getInstance().postMessage(ConsoleUI.class, "COMPOSITE_OFF_RPM=" + BinaryProtocolLogger.COMPOSITE_OFF_RPM);
 
@@ -631,6 +659,8 @@ console live data tab is broken #8402
     private @NotNull JButton getLaunchWizardButton(MainFrame mainFrame, JPanel rootPanel,
                                                     WizardContainer wizardContainer, CardLayout rootCardLayout) {
         JButton launchWizardButton = new JButton("Launch Wizard");
+        // blue main-action style from the theme files [tag:console_theme]
+        launchWizardButton.putClientProperty(FlatClientProperties.STYLE_CLASS, "primary");
         launchWizardButton.addActionListener(e -> {
             if (ConnectionStatusLogic.INSTANCE.getValue() != ConnectionStatusValue.CONNECTED) {
                 mainFrame.showMessageOverlay("Please connect to an ECU before launching the wizard.");
@@ -759,6 +789,12 @@ console live data tab is broken #8402
     private void setNonTabContentActive(boolean active) {
         nonTabContentActive = active;
         updateOutputPollingForSelectedTab();
+    }
+
+    public void closeAssistant() {
+        if (llmTab != null) {
+            llmTab.close();
+        }
     }
 
     private void releaseOutputPolling() {

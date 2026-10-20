@@ -23,7 +23,11 @@ void configureHellenCanTerminator(bool enableTerminator);
 
 void setHellenCan();
 void setHellenCan2();
+void setHellenUart2();
 void setHellen64Can();
+
+// Called by firmware startup before firmware- and board-specific overrides.
+void setupHellenBoardOverrides();
 
 void setHellenAnalogDividers();
 void setHellenVbatt();

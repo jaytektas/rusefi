@@ -165,16 +165,6 @@ void printOverallStatus() {
 	}
 }
 
-#if !defined(LOGIC_ANALYZER_BUFFER_SIZE)
-// TODO: how small can this be?
-#define LOGIC_ANALYZER_BUFFER_SIZE 1000
-#endif /* LOGIC_ANALYZER_BUFFER_SIZE */
-
-#if EFI_LOGIC_ANALYZER
-static char logicAnalyzerBuffer[LOGIC_ANALYZER_BUFFER_SIZE];
-static Logging logicAnalyzerLogger("logic analyzer", logicAnalyzerBuffer, sizeof(logicAnalyzerBuffer));
-#endif // EFI_LOGIC_ANALYZER
-
 /**
  * @brief Sends all pending data to rusEfi console
  *
@@ -212,11 +202,6 @@ static systime_t timeOfPreviousReport = (systime_t) -1;
 #else
 	chThdSleepMilliseconds(200);
 #endif
-
-#if EFI_LOGIC_ANALYZER
-	printWave(&logicAnalyzerLogger);
-	scheduleLogging(&logicAnalyzerLogger);
-#endif /* EFI_LOGIC_ANALYZER */
 }
 
 #if EFI_PROD_CODE
@@ -360,6 +345,9 @@ static uint8_t packTSEngineState() {
 		// Prediction is TPS-triggered and can outlast the TPS threshold flag.
 		// Adder diagnostics may be stale in this mode, so ignore them.
 		accelerating = engine->outputChannels.isMapPredictionActive;
+	} else if (engineConfiguration->accelEnrichmentMode == AE_MODE_LUA) {
+		// [tag:lua_accel_enrichment] Use applied mass, not the native TPS detector.
+		accelerating = engine->module<TpsAccelEnrichment>()->luaAccelFuel > 0;
 	} else {
 		const auto& ae = engine->module<TpsAccelEnrichment>();
 		// The applied adder also covers fractional-pump decay after the TPS step.
@@ -492,7 +480,9 @@ static void updateVehicleSpeed() {
 	engine->outputChannels.wheelSlipRatio = Sensor::getOrZero(SensorType::WheelSlipRatio);
 #ifdef MODULE_GEAR_DETECTOR
 	engine->outputChannels.speedToRpmRatio = engine->module<GearDetector>()->getGearboxRatio();
-	engine->outputChannels.detectedGear = Sensor::getOrZero(SensorType::DetectedGear);
+	engine->outputChannels.detectedGear = Sensor::getOr(SensorType::DetectedGear, gear_e::INVALID);
+	engine->outputChannels.transmissionSlipPercent = engine->module<GearDetector>()->getSlipPercent();
+	engine->outputChannels.transmissionSlipValid = engine->module<GearDetector>()->isSlipValid();
 #endif
 #endif /* EFI_VEHICLE_SPEED */
 }
@@ -587,6 +577,7 @@ static void updateMiscSensors() {
 	engine->outputChannels.wastegatePositionSensor = Sensor::getOrZero(SensorType::WastegatePosition);
 
 	engine->outputChannels.ISSValue = Sensor::getOrZero(SensorType::InputShaftSpeed);
+	engine->outputChannels.outputShaftSpeed = Sensor::getOrZero(SensorType::OutputShaftSpeed);
 	engine->outputChannels.auxSpeed1 = Sensor::getOrZero(SensorType::AuxSpeed1);
 	engine->outputChannels.auxSpeed2 = Sensor::getOrZero(SensorType::AuxSpeed2);
 
@@ -629,13 +620,6 @@ static void updateFuelResults() {
 static void updateFuelInfo() {
 	updateFuelCorrections();
 	updateFuelResults();
-#if EFI_ENGINE_CONTROL
-	const auto& wallFuel = engine->injectionEvents.elements[0].getWallFuel();
-	engine->outputChannels.wallFuelAmount = wallFuel.getWallFuel() * 1000;			// Convert grams to mg
-	engine->outputChannels.wallFuelCorrectionValue = wallFuel.wallFuelCorrection * 1000;	// Convert grams to mg
-
-	engine->outputChannels.veValue = engine->engineState.currentVe;
-#endif // EFI_ENGINE_CONTROL
 }
 
 static void updateIgnition(float rpm) {
@@ -648,10 +632,6 @@ static void updateFlags() {
 	engine->outputChannels.isO2HeaterOn = enginePins.o2heater.getLogicValue();
 	// todo: eliminate state copy logic by giving DfcoController it's owm xxx.txt and leveraging LiveData
 	engine->outputChannels.dfcoActive = engine->module<DfcoController>()->cutFuel();
-
-#if EFI_LAUNCH_CONTROL
-	engine->outputChannels.launchTriggered = engine->launchController.isLaunchCondition;
-#endif
 
 #if EFI_PROD_CODE
 	engine->outputChannels.isTriggerError = isTriggerErrorNow();

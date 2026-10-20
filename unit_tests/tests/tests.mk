@@ -1,4 +1,14 @@
 TESTS_SRC_CPP = \
+	tests/test_past_codes.cpp \
+	tests/test_setting_diagnostics.cpp \
+	tests/test_nucleo_hardware_ci.cpp \
+	tests/test_adc_offchip.cpp \
+	tests/test_mcp4728.cpp \
+	tests/test_dac.cpp \
+	tests/test_adc_callbacks.cpp \
+	tests/test_adc_sample_buffer.cpp \
+	tests/test_adc_channel_map.cpp \
+	tests/test_adc_shared_sampler.cpp \
 	tests/controllers/test_at32_port.cpp \
 	tests/test_slcan.cpp \
 	tests/test_hardware_pwm.cpp \
@@ -42,6 +52,9 @@ TESTS_SRC_CPP = \
 	tests/trigger/test_real_nb2_cranking.cpp \
 	tests/trigger/test_real_neon.cpp \
 	tests/trigger/test_real_gm_24x.cpp \
+	tests/trigger/test_gm_lt1_optispark.cpp \
+	tests/trigger/test_nissan_vk56.cpp \
+	tests/trigger/test_suzuki_36_2_2.cpp \
 	tests/trigger/test_real_nissan_hr.cpp \
 	tests/trigger/test_real_nissan_hr_vvt.cpp \
 	tests/trigger/test_real_k24a2.cpp \
@@ -67,6 +80,8 @@ TESTS_SRC_CPP = \
 	tests/ignition_injection/test_hd_cranking.cpp \
 	tests/ignition_injection/test_hd_cranking2.cpp \
 	tests/ignition_injection/test_ignition_scheduling.cpp \
+	tests/ignition_injection/test_burst_knock.cpp \
+	tests/ignition_injection/test_wot_enrichment.cpp \
 	tests/ignition_injection/test_fuelCut.cpp \
 	tests/ignition_injection/test_fuel_computer.cpp \
 	tests/ignition_injection/test_injector_model.cpp \
@@ -151,6 +166,8 @@ TESTS_SRC_CPP = \
 	tests/test_dwell_corner_case_issue_796.cpp \
 	tests/test_idle_controller.cpp \
 	tests/test_launch.cpp \
+	tests/test_rolling_launch.cpp \
+	tests/engine_state_machine/test_engine_state_machine.cpp \
 	tests/test_fuel_map.cpp \
 	tests/test_gear_detector.cpp \
 	tests/ignition_injection/test_fuel_wall_wetting.cpp \
@@ -187,6 +204,7 @@ TESTS_SRC_CPP = \
 	tests/sensor/func_chain.cpp \
 	tests/sensor/redundant.cpp \
 	tests/sensor/test_sensor_init.cpp \
+	tests/sensor/test_tps_smoothing.cpp \
 	tests/sensor/test_baro_from_map.cpp \
 	tests/sensor/table_func.cpp \
 	tests/sensor/test_fuel_level_func.cpp \
@@ -201,8 +219,10 @@ TESTS_SRC_CPP = \
 	test-framework/logicdata2csv.cpp \
 	tests/binary_log/test_bit_logger_field.cpp \
 	tests/binary_log/test_log_file_content.cpp \
+	tests/binary_log/test_mlg_open_issues.cpp \
 	tests/test_dynoview.cpp \
 	tests/test_gpio.cpp \
+	tests/test_digital_input_exti.cpp \
 	tests/test_limp.cpp \
 	tests/test_tcu.cpp \
 	tests/test_hellen_board_id.cpp \
@@ -218,11 +238,13 @@ TESTS_SRC_CPP = \
 	tests/actuators/test_etb_integrated.cpp \
 	tests/actuators/test_fan_control.cpp \
 	tests/actuators/test_fuel_pump.cpp \
+	tests/actuators/test_fuel_pump_pwm.cpp \
 	tests/actuators/test_gppwm.cpp \
 	tests/actuators/test_idle_hardware.cpp \
 	tests/actuators/test_main_relay.cpp \
 	tests/actuators/test_stepper.cpp \
 	tests/actuators/test_tacho.cpp \
+	tests/actuators/test_speedometer.cpp \
 	tests/actuators/test_vvt.cpp \
 	tests/actuators/test_alternator.cpp \
 	tests/actuators/test_alternator_voltage_target_set_point.cpp \

@@ -9,7 +9,12 @@ CONFIG_INPUTS = \
   $(PROJECT_DIR)/controllers/algo/rusefi_hw_stm32_enums.h \
   $(PROJECT_DIR)/controllers/algo/rusefi_hw_adc_enums.h \
   $(PROJECT_DIR)/integration/rusefi_config.txt \
+  $(PROJECT_DIR)/integration/rusefi_config_shared.txt \
+  $(PROJECT_DIR)/controllers/algo/accel_enrichment.engineConfiguration.txt \
   $(PROJECT_DIR)/tunerstudio/tunerstudio.template.ini \
+  $(PROJECT_DIR)/tunerstudio/transient_fueling.ini \
+  $(PROJECT_DIR)/tunerstudio/transient_gauges.ini \
+  $(PROJECT_DIR)/tunerstudio/top_level_menu.ini \
   $(PROJECT_DIR)/${META_OUTPUT_ROOT_FOLDER}console/binary/generated/live_data_fragments.ini \
   $(PROJECT_DIR)/${META_OUTPUT_ROOT_FOLDER}console/binary/generated/data_logs.ini \
   $(PROJECT_DIR)/${META_OUTPUT_ROOT_FOLDER}console/binary/generated/fancy_content.ini \
@@ -65,8 +70,9 @@ CONFIG_FILES = \
 #  the deps for that .o file in the same GCC call, so if the .deps aren't already
 #  in the correct state, things can fail to build because Make doesn't know it needs
 #  to build the prerequisites (in this case CONFIG_FILES and RAMDISK) for those files ahead of time.
-$(TCOBJS): $(CONFIG_FILES)
-$(TCPPOBJS): $(RAMDISK)
+# Support both legacy split ARM/THUMB lists and current ChibiOS object lists.
+$(TCOBJS) $(ACOBJS) $(COBJS): $(CONFIG_FILES)
+$(TCPPOBJS) $(ACPPOBJS) $(CPPOBJS) $(CCOBJS): $(RAMDISK)
 
 # Codegen recipes below write shared files under the firmware tree (generated headers,
 # .ini fragments, java sources), so concurrent makes (firmware + simulator + unit_tests)

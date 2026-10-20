@@ -187,6 +187,10 @@ Usages:
     cppFileName: wall_fuel
     java: WallFuelState.java
     folder: controllers/algo
+    prepend: integration/rusefi_config_shared.txt
+    # [tag:wall_fuel_telemetry] SD logging and Lua read the same mg fields as TunerStudio.
+    constexpr: "engine->injectionEvents.elements[0].getWallFuel()"
+    conditional_compilation: "EFI_ENGINE_CONTROL"
 
   - name: closed_loop_idle
     cppFileName: closed_loop_idle
@@ -307,3 +311,32 @@ Usages:
     folder: controllers/modules/injector_deadtime_autotune
     engineModule: InjectorDeadtimeAutotune
     conditional_compilation: "EFI_ENGINE_CONTROL"
+
+  - name: rolling_launch_state
+    java: RollingLaunch.java
+    folder: controllers/modules/rolling_launch
+    prepend: integration/rusefi_config_shared.txt
+    output_name: rolling_launch
+    engineModule: RollingLaunchControl
+    conditional_compilation: "EFI_LAUNCH_CONTROL"
+
+  - name: burst_knock_state
+    java: BurstKnock.java
+    folder: controllers/modules/burst_knock
+    prepend: integration/rusefi_config_shared.txt
+    output_name: burst_knock
+    engineModule: BurstKnock
+
+  - name: engine_state_machine_state
+    java: EngineStateMachine.java
+    folder: controllers/modules/engine_state_machine
+    prepend: integration/rusefi_config_shared.txt
+    output_name: engine_state_machine
+    engineModule: EngineStateMachine
+
+  - name: wot_enrichment_state
+    java: WotEnrichment.java
+    folder: controllers/modules/wot_enrichment
+    prepend: integration/rusefi_config_shared.txt
+    output_name: wot_enrichment
+    engineModule: WotEnrichment
