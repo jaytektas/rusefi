@@ -1,6 +1,6 @@
 #include "global.h"
 #include "engine_types.h"
-// was generated automatically by rusEFI tool  from engine_types.h // by enum_to_string.jar tool on Sat Oct 17 23:34:51 UTC 2026
+// was generated automatically by rusEFI tool  from engine_types.h // by enum_to_string.jar tool on Mon Nov 09 23:35:07 AEDT 2026
 // see also gen_config_and_enums.bat
 
 
@@ -338,6 +338,8 @@ const char *getTrigger_type_e(trigger_type_e value) {
 			return "TT_MITSU_4G63_CRANK";
 		case trigger_type_e::TT_NARROW_SINGLE_TOOTH:
 			return "TT_NARROW_SINGLE_TOOTH";
+		case trigger_type_e::TT_NISSAN8_2_2_2_2_2:
+			return "TT_NISSAN8_2_2_2_2_2";
 		case trigger_type_e::TT_NISSAN_HR:
 			return "TT_NISSAN_HR";
 		case trigger_type_e::TT_NISSAN_HR_CAM_IN:

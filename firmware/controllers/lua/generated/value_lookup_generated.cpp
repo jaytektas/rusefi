@@ -1591,6 +1591,9 @@ float getConfigValueByHash(const int hash) {
 // mc33_t_hold_tot
 		case -2086516502:
 			return engineConfiguration->mc33_t_hold_tot;
+// minCamPhaseResolveRpm
+		case -45436934:
+			return engineConfiguration->minCamPhaseResolveRpm;
 // maxCamPhaseResolveRpm
 		case -2070332548:
 			return engineConfiguration->maxCamPhaseResolveRpm;
@@ -5087,6 +5090,11 @@ bool setConfigValueByName(const char *name, float value) {
 		case -2086516502:
 	{
 		engineConfiguration->mc33_t_hold_tot = (int)value;
+		return 1;
+	}
+		case -45436934:
+	{
+		engineConfiguration->minCamPhaseResolveRpm = (int)value;
 		return 1;
 	}
 		case -2070332548:

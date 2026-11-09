@@ -108,5 +108,6 @@ public enum trigger_type_e {
 	TT_SUZUKI_36_2_2,
 	TT_NISSAN_VK56DE,
 	TT_NISSAN_VK56DE_CAM,
+	TT_NISSAN8_2_2_2_2_2,
 	TT_UNUSED,
 }

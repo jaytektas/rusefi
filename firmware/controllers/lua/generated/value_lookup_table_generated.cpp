@@ -2407,6 +2407,9 @@ const ConfigParameter allParameters[] = {
 	{ 0xFD21BE62, // justATempTest
 		[]() -> float { return engineConfiguration->justATempTest; },
 		[](float value) { engineConfiguration->justATempTest = static_cast<uint8_t>(value); } },
+	{ 0xFD4AAFFA, // minCamPhaseResolveRpm
+		[]() -> float { return engineConfiguration->minCamPhaseResolveRpm; },
+		[](float value) { engineConfiguration->minCamPhaseResolveRpm = value; } },
 	{ 0xFDB102A6, // smAccumulatorSnapTimeMs
 		[]() -> float { return engineConfiguration->smAccumulatorSnapTimeMs; },
 		[](float value) { engineConfiguration->smAccumulatorSnapTimeMs = static_cast<uint16_t>(value); } },
