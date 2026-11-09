@@ -16,12 +16,14 @@
 #include "gpio_ext.h"
 #endif // EFI_PROD_CODE
 
-// Duty cycles below/above these thresholds switch the state machine into PM_ZERO/PM_FULL mode:
+// Duty cycles at or beyond these thresholds switch the state machine into PM_ZERO/PM_FULL mode:
 // instead of generating sub-1% pulses, the output is held at a constant level (see setSimplePwmDutyCycle).
+// The comparisons against these are inclusive: the double-solenoid idle endpoints land exactly on them
+// and must be held constant, see Actuators.IdleDoubleSolenoid.
 // 1% duty cycle
-#define ZERO_PWM_THRESHOLD 0.01
+#define ZERO_PWM_THRESHOLD 0.01f
 // 99% duty cycle
-#define FULL_PWM_THRESHOLD 0.99
+#define FULL_PWM_THRESHOLD 0.99f
 
 SimplePwm::SimplePwm()
 {
@@ -82,14 +84,14 @@ void SimplePwm::setSimplePwmDutyCycle(float dutyCycle) {
 	// in PM_ZERO/PM_FULL mode togglePwmState() ignores the switch-time table and re-asserts the constant pin state
 	// once per period, so we also fire the matching edge manually here for an immediate reaction instead of waiting
 	// up to one full period for the next timer callback.
-	if (dutyCycle < ZERO_PWM_THRESHOLD) {
+	if (dutyCycle <= ZERO_PWM_THRESHOLD) {
 		mode = PM_ZERO;
 
 		if (m_stateChangeCallback) {
 			// Manually fire falling edge
 			m_stateChangeCallback(0, this);
 		}
-	} else if (dutyCycle > FULL_PWM_THRESHOLD) {
+	} else if (dutyCycle >= FULL_PWM_THRESHOLD) {
 		mode = PM_FULL;
 
 		if (m_stateChangeCallback) {
@@ -163,7 +165,7 @@ void PwmConfig::handleCycleStart() {
 	}
 
 	// Compute the maximum number of iterations without overflowing a uint32_t worth of timestamp
-	uint32_t iterationLimitInt32 = (0xFFFFFFFF / periodNt) - 2;
+	uint32_t iterationLimitInt32 = static_cast<uint32_t>(static_cast<float>(0xFFFFFFFF) / periodNt) - 2;
 
 	// Maximum number of iterations that don't lose precision due to 32b float (~7 decimal significant figures)
 	// We want at least 0.01% timing precision (aka 1/10000 cycle, 0.072 degree for trigger stimulator), which

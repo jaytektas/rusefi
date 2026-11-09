@@ -11,6 +11,7 @@ import com.rusefi.core.preferences.storage.Node;
 import com.rusefi.ini.reader.IniFileReaderUtil;
 import com.rusefi.io.UpdateOperationCallbacks;
 import com.rusefi.ui.UIContext;
+import com.rusefi.ui.util.UiUtils;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.*;
@@ -206,6 +207,24 @@ class CalibrationPanelWorkspaceTest {
                 assertEquals(window.content.getPreferredSize(), window.bounds.getSize());
                 assertTrue(window.bounds.width < 1000);
                 assertTrue(window.bounds.height < 400, "A compact form must not inherit the tile height");
+            }
+        });
+    }
+
+    @Test
+    void newWindowOpensOnOwnersScreen() throws Throwable {
+        IniFileModel ini = ini();
+        List<Rectangle> screens = Arrays.asList(
+            new Rectangle(0, 0, 1920, 1040), new Rectangle(-1280, 0, 1280, 984));
+        SwingUtilities.invokeAndWait(() -> {
+            try (Fixture fixture = new Fixture(ini, new Node(), screens)) {
+                Window owner = mock(Window.class);
+                when(owner.getBounds()).thenReturn(new Rectangle(-1100, 100, 900, 700));
+                fixture.workspace.restore(owner);
+                fixture.select("first");
+                fixture.workspace.detachCurrentPanel();
+                assertEquals(new Point(-1240, 40), fixture.windows.get(0).bounds.getLocation(),
+                    "A fresh detached window should open on the owner's display");
             }
         });
     }
@@ -456,6 +475,77 @@ class CalibrationPanelWorkspaceTest {
     }
 
     @Test
+    void primaryNavigationDoesNotRebuildDetachedViewsWhenImageContentsAreUnchanged() throws Throwable {
+        IniFileModel ini = ini();
+        SwingUtilities.invokeAndWait(() -> {
+            try (Fixture fixture = new Fixture(ini, new Node())) {
+                fixture.select("first");
+                fixture.workspace.detachCurrentPanel();
+                JTextField beforeNavigation = find(fixture.windows.get(0).content, JTextField.class);
+
+                fixture.select("second");
+
+                assertSame(beforeNavigation, find(fixture.windows.get(0).content, JTextField.class),
+                    "Primary navigation should preserve detached controls when image data is unchanged");
+            }
+        });
+    }
+
+    @Test
+    void primaryNavigationRefreshesDetachedViewsWhenInPlaceImageContentsChanged() throws Throwable {
+        IniFileModel ini = ini();
+        SwingUtilities.invokeAndWait(() -> {
+            try (Fixture fixture = new Fixture(ini, new Node())) {
+                fixture.select("first");
+                fixture.workspace.detachCurrentPanel();
+                ConfigurationImage working = fixture.primary.getWorkingImage();
+                working.getContent()[0] = 82;
+
+                fixture.select("second");
+
+                assertEquals("82", find(fixture.windows.get(0).content, JTextField.class).getText(),
+                    "Detached controls must refresh when mutable working-image contents change");
+            }
+        });
+    }
+
+    @Test
+    void primaryViewRefreshesDetachedViewsWhenIniModelChangesWithSameImage() throws Throwable {
+        IniFileModel ini = ini();
+        IniFileModel replacement = ini();
+        SwingUtilities.invokeAndWait(() -> {
+            try (Fixture fixture = new Fixture(ini, new Node())) {
+                fixture.select("first");
+                fixture.workspace.detachCurrentPanel();
+                JTextField beforeReplacement = find(fixture.windows.get(0).content, JTextField.class);
+
+                fixture.primary.update("second", replacement, fixture.primary.getWorkingImage());
+
+                assertNotSame(beforeReplacement, find(fixture.windows.get(0).content, JTextField.class),
+                    "Detached controls must refresh when their INI model instance changes");
+            }
+        });
+    }
+
+    @Test
+    void navigationAfterDetachedEditPreservesDetachedEditor() throws Throwable {
+        IniFileModel ini = ini();
+        SwingUtilities.invokeAndWait(() -> {
+            try (Fixture fixture = new Fixture(ini, new Node())) {
+                fixture.select("first");
+                fixture.workspace.detachCurrentPanel();
+                JTextField edited = find(fixture.windows.get(0).content, JTextField.class);
+                edited.setText("38");
+
+                fixture.select("second");
+
+                assertSame(edited, find(fixture.windows.get(0).content, JTextField.class));
+                assertEquals("38", edited.getText());
+            }
+        });
+    }
+
+    @Test
     void tableAndCurveEditsReachEveryViewAndPreserveOtherFields() throws Throwable {
         IniFileModel ini = ini();
         SwingUtilities.invokeAndWait(() -> {
@@ -520,6 +610,65 @@ class CalibrationPanelWorkspaceTest {
                 } finally {
                     toolbar.onDisconnect();
                 }
+            }
+        });
+    }
+
+    /** From another tab: any page opens floating, without changing the page shown in Tuning. */
+    @Test
+    void pagesOpenByNameCentredOnTheConsole() throws Throwable {
+        IniFileModel ini = ini();
+        SwingUtilities.invokeAndWait(() -> {
+            Node config = new Node();
+            try (Fixture fixture = new Fixture(ini, config)) {
+                Window owner = mock(Window.class);
+                when(owner.getBounds()).thenReturn(new Rectangle(100, 50, 1000, 800));
+                fixture.workspace.restore(owner);
+                fixture.select("first");
+
+                assertTrue(fixture.workspace.openPanel("curve"));
+                assertEquals(1, fixture.windows.size());
+                FakeWindow curve = fixture.windows.get(0);
+                assertEquals("Curve", curve.title);
+                Rectangle bounds = curve.bounds;
+                assertEquals(new Point(100 + (1000 - bounds.width) / 2, 50 + (800 - bounds.height) / 2),
+                    bounds.getLocation(), "centred on the console");
+                assertEquals("first", fixture.primary.getCurrentKey(), "Tuning keeps its page");
+                assertEquals("curve", config.getChild("panel0").getProperty("key"), "restored like a detached page");
+
+                int raised = curve.raised;
+                assertTrue(fixture.workspace.openPanel("curve"));
+                assertEquals(1, fixture.windows.size(), "one window per page");
+                assertEquals(raised + 1, curve.raised, "the open window comes to the front");
+
+                assertTrue(fixture.workspace.openPanel("second"));
+                assertEquals("Second", fixture.windows.get(1).title, "several pages at once");
+                assertFalse(curve.disposed);
+
+                assertFalse(fixture.workspace.openPanel("missing"), "not in this INI");
+                assertFalse(fixture.workspace.openPanel(null));
+                assertEquals(2, fixture.windows.size());
+            }
+        });
+    }
+
+    @Test
+    void pageOpensWhereItWasLeftAndNotWithoutATune() throws Throwable {
+        IniFileModel ini = ini();
+        SwingUtilities.invokeAndWait(() -> {
+            Node config = new Node();
+            try (Fixture first = new Fixture(ini, config)) {
+                first.workspace.openPanel("first");
+                first.windows.get(0).move(new Rectangle(210, 130, 640, 410));
+            }
+            try (Fixture second = new Fixture(ini, roundTrip(config))) {
+                second.workspace.openPanel("first");
+                assertEquals(new Rectangle(210, 130, 640, 410), second.windows.get(0).bounds);
+
+                second.primary.reset();
+                assertTrue(second.windows.get(0).disposed);
+                assertFalse(second.workspace.openPanel("second"), "nothing to edit before a tune is loaded");
+                assertEquals(1, second.windows.size());
             }
         });
     }
@@ -594,6 +743,10 @@ class CalibrationPanelWorkspaceTest {
         final CalibrationDialogWidget primary;
 
         Fixture(IniFileModel ini, Node config) {
+            this(ini, config, Collections.singletonList(new Rectangle(0, 0, 1280, 960)));
+        }
+
+        Fixture(IniFileModel ini, Node config, List<Rectangle> screens) {
             this.ini = ini;
             context.iniFileState.setIniFileModelForTest(ini);
             workspace = new CalibrationPanelWorkspace(context, config,
@@ -601,7 +754,7 @@ class CalibrationPanelWorkspaceTest {
                     FakeWindow window = new FakeWindow(title, content, close, split, canSplit, moved);
                     windows.add(window);
                     return window;
-                }, () -> Collections.singletonList(new Rectangle(0, 0, 1280, 960)));
+                }, () -> screens);
             primary = workspace.getPrimary();
             primary.update((String) null, ini, initialImage());
         }
@@ -627,6 +780,7 @@ class CalibrationPanelWorkspaceTest {
         Rectangle bounds;
         boolean disposed;
         boolean canSplit;
+        int raised;
 
         FakeWindow(String title, JScrollPane content, Runnable close, Runnable split, boolean canSplit,
                    Consumer<Rectangle> moved) {
@@ -645,7 +799,7 @@ class CalibrationPanelWorkspaceTest {
         }
 
         public void show() { }
-        public void toFront() { }
+        public void toFront() { raised++; }
         public Rectangle getBounds() { return new Rectangle(bounds); }
         public void setBounds(Rectangle bounds) { this.bounds = new Rectangle(bounds); }
         public void setCanSplit(boolean canSplit) { this.canSplit = canSplit; }
@@ -678,7 +832,8 @@ class CalibrationPanelWorkspaceTest {
     }
 
     private static JButton button(JPanel panel, String text) {
-        return Arrays.stream(panel.getComponents()).filter(component -> component instanceof JButton)
+        // buttons sit inside JoinedButtons groups, so search the whole toolbar
+        return UiUtils.getAllComponents(panel).stream().filter(component -> component instanceof JButton)
             .map(component -> (JButton) component).filter(button -> text.equals(button.getText())).findFirst().get();
     }
 

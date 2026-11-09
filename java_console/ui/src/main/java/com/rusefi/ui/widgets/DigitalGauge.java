@@ -10,7 +10,11 @@ import java.awt.geom.RoundRectangle2D;
 /** Text presentation: title, a large value with its units, and a thin progress line. */
 public final class DigitalGauge extends CardGauge {
     public DigitalGauge(GaugeModel model, IniFileModel ini, ConfigurationImage configuration) {
-        super(model, ini, configuration);
+        this(GaugeScale.fromIni(model, ini, configuration), model);
+    }
+
+    public DigitalGauge(GaugeScale scale, GaugeModel model) {
+        super(scale, model);
         setPreferredSize(new Dimension(220, 120));
         setMinimumSize(new Dimension(80, 50));
     }
@@ -23,7 +27,7 @@ public final class DigitalGauge extends CardGauge {
         double bottom = face.y + face.height - pad;
 
         g.setFont(GaugeStyle.font(Font.PLAIN, (float) clamp(face.height * 0.12, 10, 16)));
-        g.setColor(GaugeStyle.SCALE);
+        g.setColor(GaugeStyle.scale());
         FontMetrics titleMetrics = g.getFontMetrics();
         double titleBaseline = face.y + pad + titleMetrics.getAscent();
         GaugeStyle.drawText(g, GaugeStyle.fit(g, getTitle(), width), left, titleBaseline, -1);
@@ -54,10 +58,10 @@ public final class DigitalGauge extends CardGauge {
         double baseline = top + available / 2 + (valueMetrics.getAscent() - valueMetrics.getDescent()) / 2.0;
         double x = left + (width - total) / 2;
         g.setFont(valueFont);
-        g.setColor(!Double.isFinite(value) ? GaugeStyle.TICK : isDanger(value) ? GaugeStyle.DANGER : GaugeStyle.TEXT);
+        g.setColor(!Double.isFinite(value) ? GaugeStyle.tick() : isDanger(value) ? GaugeStyle.danger() : GaugeStyle.text());
         GaugeStyle.drawText(g, text, x, baseline, -1);
         g.setFont(unitsFont);
-        g.setColor(GaugeStyle.SCALE);
+        g.setColor(GaugeStyle.scale());
         GaugeStyle.drawText(g, units, x + valueMetrics.stringWidth(text) + gap, baseline, -1);
     }
 

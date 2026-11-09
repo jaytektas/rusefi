@@ -1,5 +1,8 @@
 package com.rusefi.ui.widgets.tune;
 
+import com.rusefi.ui.widgets.TuningIcons;
+import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.icons.FlatSearchIcon;
 import com.opensr5.ConfigurationImage;
 import com.opensr5.ini.DialogModel;
 import com.opensr5.ini.ExpressionEvaluator;
@@ -25,7 +28,6 @@ import javax.swing.tree.DefaultTreeSelectionModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.*;
 import java.util.List;
@@ -46,15 +48,15 @@ public class MainMenuTreeWidget {
     private final JTextField searchField = new JTextField();
     private boolean isUpdatingModel = false;
     private boolean isProcessingSearchSelection = false;
-    private String lastSearchSelectedKey = null;
     private Consumer<SubMenuModel> onSelect;
 
     private final UIContext uiContext;
     /** Nodes whose SubMenuModel has at least one enable/visible expression. */
     private final List<ExpressionEntry> expressionEntries = new ArrayList<>();
-    /** Nodes currently evaluated as disabled (expression false). Used by renderer and click guard. */
-    private final Set<DefaultMutableTreeNode> disabledNodes = new HashSet<>();
-    /** Keys of currently disabled submenus for a quick lookup during click handling. */
+    /**
+     * Keys of currently disabled submenus (expression false). Used by renderer and click guard.
+     * Keyed by submenu rather than tree node because search results are built from copied nodes.
+     */
     private final Set<String> disabledKeys = new HashSet<>();
 
     /** Renders a "std_separator" menu entry as a horizontal line. */
@@ -90,7 +92,30 @@ public class MainMenuTreeWidget {
             populate(model);
         }
 
-        tree = new JTree(root);
+        tree = new JTree(root) {
+            private TreePath selectionBeforeMousePress;
+            private boolean sawMousePress;
+
+            @Override
+            protected void processMouseEvent(MouseEvent event) {
+                if (event.getID() == MouseEvent.MOUSE_PRESSED) {
+                    selectionBeforeMousePress = getSelectionPath();
+                    sawMousePress = true;
+                }
+                super.processMouseEvent(event);
+                if (event.getID() == MouseEvent.MOUSE_CLICKED) {
+                    TreePath clickedPath = getPathForLocation(event.getX(), event.getY());
+                    TreePath selectedBeforeClick = sawMousePress ? selectionBeforeMousePress : getSelectionPath();
+                    if (clickedPath != null && clickedPath.equals(selectedBeforeClick)) {
+                        // Selection events handle changed pages during mouse press. Only repeat
+                        // the callback for a click on the page that was already selected.
+                        handleSelection(clickedPath);
+                    }
+                    selectionBeforeMousePress = null;
+                    sawMousePress = false;
+                }
+            }
+        };
         tree.setSelectionModel(new DefaultTreeSelectionModel() {
             {
                 setSelectionMode(SINGLE_TREE_SELECTION);
@@ -133,15 +158,6 @@ public class MainMenuTreeWidget {
             "scrollDownChangeSelection", "scrollDownChangeLead", "scrollDownExtendSelection");
         installNavigationActions(1, true, "selectChild", "selectChildChangeLead");
         tree.setToggleClickCount(1);
-        tree.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                TreePath path = tree.getPathForLocation(e.getX(), e.getY());
-                if (path != null) {
-                    handleSelection(path);
-                }
-            }
-        });
         tree.addTreeSelectionListener(e -> {
             if (isUpdatingModel) {
                 return;
@@ -221,7 +237,7 @@ public class MainMenuTreeWidget {
                         setIcon(groupIcon);
                     }
 
-                    if (disabledNodes.contains(node)) {
+                    if (userObject instanceof SubMenuModel && disabledKeys.contains(((SubMenuModel) userObject).getKey())) {
                         setForeground(UIManager.getColor("Label.disabledForeground"));
                     }
                 }
@@ -229,8 +245,12 @@ public class MainMenuTreeWidget {
             }
         });
 
-        JPanel topPanel = new JPanel(new BorderLayout());
-        searchField.putClientProperty("JTextField.placeholderText", "search here");
+        JPanel topPanel = new JPanel(new BorderLayout(4, 0));
+        topPanel.setOpaque(false);
+        topPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 6, 6));
+        searchField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Search settings");
+        searchField.putClientProperty(FlatClientProperties.TEXT_FIELD_LEADING_ICON, new FlatSearchIcon());
+        searchField.putClientProperty(FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON, true);
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -249,24 +269,37 @@ public class MainMenuTreeWidget {
         });
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        JButton expandAll = new JButton(AutoupdateUtil.loadIcon("expand_all16.png"));
+        buttonPanel.setOpaque(false);
+        JButton expandAll = new JButton(TuningStyle.FoldIcon.EXPAND_ALL);
         expandAll.setToolTipText("Expand All");
-        expandAll.setPreferredSize(new Dimension(32, 32));
+        expandAll.putClientProperty(FlatClientProperties.BUTTON_TYPE, FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        expandAll.setPreferredSize(new Dimension(30, 30));
         expandAll.addActionListener(e -> expandAll(tree, true));
 
-        JButton collapseAll = new JButton(AutoupdateUtil.loadIcon("collapse_all16.png"));
+        JButton collapseAll = new JButton(TuningStyle.FoldIcon.COLLAPSE_ALL);
         collapseAll.setToolTipText("Collapse All");
-        collapseAll.setPreferredSize(new Dimension(32, 32));
+        collapseAll.putClientProperty(FlatClientProperties.BUTTON_TYPE, FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        collapseAll.setPreferredSize(new Dimension(30, 30));
         collapseAll.addActionListener(e -> expandAll(tree, false));
 
         buttonPanel.add(expandAll);
         buttonPanel.add(collapseAll);
 
-        topPanel.add(searchField, BorderLayout.NORTH);
-        topPanel.add(buttonPanel, BorderLayout.SOUTH);
+        topPanel.add(searchField, BorderLayout.CENTER);
+        topPanel.add(buttonPanel, BorderLayout.EAST);
+
+        // A white sidebar like the Log Viewer's, with a rounded selection (Tree.tuningMenu style).
+        Color sidebar = TuningStyle.sidebarBackground();
+        contentPane.setBackground(sidebar);
+        contentPane.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, TuningStyle.separator()));
+        tree.putClientProperty(FlatClientProperties.STYLE_CLASS, "tuningMenu");
+        tree.setBackground(sidebar);
+        JScrollPane treeScroll = new JScrollPane(tree);
+        treeScroll.setBorder(BorderFactory.createEmptyBorder());
+        treeScroll.getViewport().setBackground(sidebar);
 
         contentPane.add(topPanel, BorderLayout.NORTH);
-        contentPane.add(new JScrollPane(tree), BorderLayout.CENTER);
+        contentPane.add(treeScroll, BorderLayout.CENTER);
 
         // Refresh the disabled state as soon as the tune is read from the ECU.
         // If the tree was not populated at startup (no local ini file), populate it now.
@@ -338,7 +371,6 @@ public class MainMenuTreeWidget {
                             // call onSelect only if not disabled
                             if (onSelect != null && !disabledKeys.contains(subMenuToSelect.getKey())) {
                                 onSelect.accept(subMenuToSelect);
-                                lastSearchSelectedKey = subMenuToSelect.getKey();
                             }
 
                             // Defer scroll to after all other events are processed
@@ -357,12 +389,8 @@ public class MainMenuTreeWidget {
             });
         } else {
             if (selectedSubMenu != null && onSelect != null) {
-                // Skip if this is a spurious selection after search (e.g., first menu item auto-selected by the JTree)
-                if (lastSearchSelectedKey != null && !lastSearchSelectedKey.equals(selectedSubMenu.getKey())) {
-                    lastSearchSelectedKey = null;
-                    return;
-                }
-                lastSearchSelectedKey = null;
+                // Search restoration selects the result programmatically with the listener
+                // suspended. The next real selection is user navigation, not a duplicate.
                 // Skip disabled items
                 if (disabledKeys.contains(selectedSubMenu.getKey())) {
                     return;
@@ -576,12 +604,10 @@ public class MainMenuTreeWidget {
     }
 
     private void refreshExpressions(IniFileModel iniFileModel, ConfigurationImage ci) {
-        disabledNodes.clear();
         disabledKeys.clear();
 
         for (ExpressionEntry entry : expressionEntries) {
             if (isDisabledByExpressions(entry.subMenu, iniFileModel, ci)) {
-                disabledNodes.add(entry.node);
                 disabledKeys.add(entry.subMenu.getKey());
             }
         }
@@ -593,7 +619,8 @@ public class MainMenuTreeWidget {
         tree.repaint();
     }
 
-    private boolean isDisabledByExpressions(SubMenuModel subMenu, IniFileModel iniFileModel, ConfigurationImage ci) {
+    /** Shared with {@link SettingsPageIndex}, so search offers the pages the tree lets you open. */
+    static boolean isDisabledByExpressions(SubMenuModel subMenu, IniFileModel iniFileModel, ConfigurationImage ci) {
         if (subMenu.getEnableExpression() != null) {
             Boolean enabled = ExpressionEvaluator.evaluateBooleanExpression(subMenu.getEnableExpression(), iniFileModel, ci);
             if (Boolean.FALSE.equals(enabled)) return true;
@@ -657,9 +684,14 @@ public class MainMenuTreeWidget {
             if (!isSelectable(path)) {
                 return;
             }
+            boolean alreadySelected = path.equals(tree.getSelectionPath());
             tree.setSelectionPath(path);
             tree.scrollPathToVisible(path);
-            handleSelection(path);
+            // A changed selection is handled by the listener. Preserve the public method's
+            // refresh behavior when callers explicitly select the already-current page.
+            if (alreadySelected) {
+                handleSelection(path);
+            }
         }
     }
 
@@ -688,7 +720,7 @@ public class MainMenuTreeWidget {
     }
 
     private static ImageIcon loadTuningIcon(String name, int size) {
-        return scaleIcon(AutoupdateUtil.loadIcon("icons/tuning/" + name + "48.png"), size);
+        return scaleIcon(TuningIcons.load(name), size);
     }
 
     public JPanel getContentPane() {

@@ -10,6 +10,7 @@
 #include "efi_pid.h"
 #include "idle_thread.h"
 #include "electronic_throttle.h"
+#include "fan_control.h"
 
 using ::testing::StrictMock;
 using ::testing::_;
@@ -23,7 +24,7 @@ TEST(idle_v2, timingPid) {
 
 	engineConfiguration->useIdleTimingPidControl = true;
 
-	engineConfiguration->idleTimingPid.pFactor = 0.1;
+	engineConfiguration->idleTimingPid.pFactor = 0.1f;
 	engineConfiguration->idleTimingPid.minValue = -10;
 	engineConfiguration->idleTimingPid.maxValue = 10;
 	engineConfiguration->idleTimingSoftEntryTime = 0.0f;
@@ -259,6 +260,8 @@ TEST(idle_v2, runningFanAcBump) {
 	engineConfiguration->acIdleExtraOffset = 9;
 	engineConfiguration->fan1ExtraIdle = 7;
 	engineConfiguration->fan2ExtraIdle = 3;
+	engineConfiguration->fanPin = Gpio::A1;
+	engineConfiguration->fan2Pin = Gpio::A2;
 
 	setTable(config->cltIdleCorrTable, 50.0f);
 
@@ -287,6 +290,45 @@ TEST(idle_v2, runningFanAcBump) {
 	enginePins.fanRelay.setValue(1);
 	enginePins.fanRelay2.setValue(1);
 	EXPECT_FLOAT_EQ(50 + 9 + 7 + 3, dut.getRunningOpenLoop(IIdleController::Phase::Idling, 0, 10, 0));
+}
+
+// Issue #10310: unassigned fan outputs must not add idle air.
+TEST(idle_v2, unassignedFanOutputDoesNotAddIdleAir) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	IdleController dut;
+
+	engineConfiguration->fanPin = Gpio::Unassigned;
+	engineConfiguration->fan2Pin = Gpio::Unassigned;
+	engineConfiguration->fan1ExtraIdle = 7;
+	engineConfiguration->fan2ExtraIdle = 3;
+	engineConfiguration->fanOnTemperature = 90;
+	engineConfiguration->fanOffTemperature = 85;
+	engineConfiguration->fan2OnTemperature = 110;
+	engineConfiguration->fan2OffTemperature = 105;
+	setTable(config->cltIdleCorrTable, 50.0f);
+
+	// Cold: neither fan requests extra idle air.
+	Sensor::setMockValue(SensorType::Clt, 75);
+	engine->module<FanControl1>()->onSlowCallback();
+	engine->module<FanControl2>()->onSlowCallback();
+	EXPECT_FLOAT_EQ(50, dut.getRunningOpenLoop(IIdleController::Phase::Idling, 0, 10, 0));
+
+	Sensor::setMockValue(SensorType::Clt, 95);
+	engine->module<FanControl1>()->onSlowCallback();
+	engine->module<FanControl2>()->onSlowCallback();
+	EXPECT_TRUE(enginePins.fanRelay.getLogicValue());
+	EXPECT_FALSE(enginePins.fanRelay2.getLogicValue());
+	EXPECT_FLOAT_EQ(50, dut.getRunningOpenLoop(IIdleController::Phase::Idling, 0, 10, 0));
+
+	engineConfiguration->fanOnTemperature = 110;
+	engineConfiguration->fanOffTemperature = 105;
+	engineConfiguration->fan2OnTemperature = 90;
+	engineConfiguration->fan2OffTemperature = 85;
+	engine->module<FanControl1>()->onSlowCallback();
+	engine->module<FanControl2>()->onSlowCallback();
+	EXPECT_FALSE(enginePins.fanRelay.getLogicValue());
+	EXPECT_TRUE(enginePins.fanRelay2.getLogicValue());
+	EXPECT_FLOAT_EQ(50, dut.getRunningOpenLoop(IIdleController::Phase::Idling, 0, 10, 0));
 }
 
 TEST(idle_v2, parkNeutralOffset) {
@@ -611,9 +653,9 @@ TEST(idle_v2, RunningToIdleTransition) {
   IdleController dut;
   dut.init();
 
-  engineConfiguration->idleRpmPid.pFactor = 0.0040;	// 0.5 output per 1 RPM error = 50% per 100 rpm
-  engineConfiguration->idleRpmPid.iFactor = 0.0040;
-  engineConfiguration->idleRpmPid.dFactor = 0.0001;
+  engineConfiguration->idleRpmPid.pFactor = 0.0040f;	// 0.5 output per 1 RPM error = 50% per 100 rpm
+  engineConfiguration->idleRpmPid.iFactor = 0.0040f;
+  engineConfiguration->idleRpmPid.dFactor = 0.0001f;
   engineConfiguration->idleRpmPid.periodMs = 0;
   engineConfiguration->idleRpmPid.minValue = -50;
   engineConfiguration->idleRpmPid.maxValue = 50;

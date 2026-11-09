@@ -26,11 +26,6 @@ public final class GaugeMenuSearch {
     private GaugeMenuSearch() {
     }
 
-    /** Searches the gauge catalog inside {@code catalog}, typically the "Change gauge" submenu. */
-    public static void addTo(JPopupMenu popup, JMenu catalog) {
-        install(popup, catalogEntries(Arrays.asList(catalog.getMenuComponents())));
-    }
-
     /** Searches the gauge groups already at the top level of {@code popup}. */
     public static void addTo(JPopupMenu popup) {
         install(popup, catalogEntries(Arrays.asList(popup.getComponents())));
@@ -106,7 +101,8 @@ public final class GaugeMenuSearch {
                 } else if (matches > MAX_RESULTS) {
                     results.add(disabledItem((matches - MAX_RESULTS) + " more - keep typing to narrow"));
                 }
-                int index = 2;
+                // Results go right below the search bar; callers may add items above it.
+                int index = popup.getComponentIndex(searchPanel) + 2;
                 for (JMenuItem result : results) {
                     popup.insert(result, index++);
                 }

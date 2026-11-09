@@ -149,8 +149,13 @@ SREC_NAME = rusefi_$(BRANCH_REF_FOR_BUNDLE)_$(BUNDLE_DATE)_$(BUNDLE_NAME)_$(SIGN
 
 # We need to put different things in the bundle depending on some meta-info flags
 ifeq ($(USE_OPENBLT),yes)
+  # A board whose resident bootloader is not built or shipped by the firmware
+  # bundle sets BUNDLE_OPENBLT_BOOTLOADER=no to keep just the update .srec and omit the staged bootloader bin/hex.
+ifneq ($(BUNDLE_OPENBLT_BOOTLOADER),no)
   BOOTLOADER_HEX_OUT = $(BOOTLOADER_HEX)
   BOOTLOADER_BIN_OUT = $(DEVICE_BIN_FOLDER)/openblt_$(BRANCH_REF_FOR_BUNDLE)_$(BUNDLE_DATE)_$(BUNDLE_NAME)_$(SIGNATURE_HASH)_$(GITHUB_SHA).bin
+endif
+
   SREC_TARGET = $(FOLDER)/$(SREC_NAME)
 ifneq (,$(OPENBLT_WIPE_FLASH_END_EXCLUSIVE))
   OPENBLT_WIPE_FOLDER = $(BIN_FOLDER)/wipe
@@ -283,6 +288,11 @@ CHECKSUM_ADDRESS = $(or $(shell \
 ifneq ($(BOARD_IMAGE_SCRIPT),)
 $(BUILDDIR)/rusefi.srec: $(BUILDDIR)/$(PROJECT).elf
 	$(PYTHON) $(BOARD_IMAGE_SCRIPT) --format srec $< $@
+else ifneq ($(CPU_ARCH),ARMCMx)
+# no Cortex-M vector table, so no image CRC slot at .vectors + 0x1C;
+# the SREC keeps the ELF load addresses
+$(BUILDDIR)/rusefi.srec: $(BUILDDIR)/$(PROJECT).elf
+	$(CP) -O srec $< $@
 else
 $(BUILDDIR)/rusefi.srec: $(BUILDDIR)/$(PROJECT).hex
 	# make sure we create the srec from a binary with crc
@@ -313,7 +323,10 @@ $(DFU) $(DBIN): .h2d-sentinel ;
 ifneq ($(BOARD_IMAGE_SCRIPT),)
 	$(error This board requires addressed HEX/SREC images; raw binary and generic DFU flashing are disabled)
 else
-ifeq ($(USE_OPENBLT),yes)
+ifneq ($(CPU_ARCH),ARMCMx)
+	# no Cortex-M vector table, so no image CRC slot and no DFU: the plain binary is the deliverable
+	cp $(BUILDDIR)/$(PROJECT).bin $(DBIN)
+else ifeq ($(USE_OPENBLT),yes)
 	$(H2D) -i $(BOOTLOADER_HEX) -i $(BUILDDIR)/$(PROJECT).hex -c $(CHECKSUM_ADDRESS) -o $(DFU) -b $(DBIN)
 	# TODO: handle .dfu file which is only used by Linux consumers!
 	bin/set_bl_bin_version.sh $(DBIN)

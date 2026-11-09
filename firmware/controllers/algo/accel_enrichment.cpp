@@ -89,7 +89,7 @@ float TpsAccelEnrichment::getTpsEnrichment() {
 
 	float mult = interpolate2d(rpm, config->tpsTspCorrValuesBins,
 						config->tpsTspCorrValues);
-	if (mult != 0 && (mult < 0.01 || mult > 100)) {
+	if (mult != 0 && (mult < 0.01f || mult > 100.f)) {
 		mult = 1;
 	}
 
@@ -294,9 +294,9 @@ void TpsAccelEnrichment::onConfigurationChange(engine_configuration_s const* /*p
 		for (int i = 0; i < TPS_TPS_ACCEL_CLT_CORR_TABLE; i++) {
 			maxBlendDuration = maxF(maxBlendDuration, config->predictiveMapBlendDurationValues[i]);
 		}
-		length = maxF(2, ceilf(maxBlendDuration / slowCallbackPeriodSecond));
+		length = static_cast<int>(maxF(2, ceilf(maxBlendDuration / slowCallbackPeriodSecond)));
 	} else {
-		length = engineConfiguration->tpsAccelLookback / slowCallbackPeriodSecond;
+		length = static_cast<int>(engineConfiguration->tpsAccelLookback / slowCallbackPeriodSecond);
 
 		if (length < 1) {
 			efiPrintf("setTpsAccelLen: Length should be positive [%d]", length);

@@ -88,7 +88,10 @@ jobs:
         echo "profile-file=${STACK_USAGE_PROFILE_FILE:-}" >> "$GITHUB_OUTPUT"
 
     - name: Checkout Submodules
-      run: misc/git_scripts/common_submodule_init.sh
+      # [tag:submodule_auth] see .github/actions/submodule-init/action.yml
+      uses: ./.github/actions/submodule-init
+      with:
+        token: ${{ secrets.MY_REPO_PAT }}
 
     - uses: ./.github/actions/setup-java
 
@@ -98,7 +101,7 @@ jobs:
         sudo bash misc/actions/ubuntu-install-tools.sh
 
     - name: Acquire Arm GNU Toolchain
-      uses: carlosperate/arm-none-eabi-gcc-action@v1.14.0
+      uses: carlosperate/arm-none-eabi-gcc-action@v1.14.1
       with:
         release: '14.2.Rel1'
 

@@ -463,7 +463,7 @@ float getBaroCorrection() {
 			config->baroCorrRpmBins, Sensor::getOrZero(SensorType::Rpm)
 		);
 
-		if (std::isnan(correction) || correction < 0.01) {
+		if (std::isnan(correction) || correction < 0.01f) {
 			warning(ObdCode::OBD_Barometric_Press_Circ_Range_Perf, "Invalid baro correction %f", correction);
 			return 1;
 		}
@@ -547,13 +547,13 @@ float getStage2InjectionFraction(float rpm, float load) {
 	);
 
 	// don't allow very small fraction, with some hysteresis
-	if (!stage2Hysteresis.test(frac, 0.1, 0.03)) {
+	if (!stage2Hysteresis.test(frac, 0.1f, 0.03f)) {
 		return 0;
 	}
 
 	// Clamp to 90%
-	if (frac > 0.9) {
-		frac = 0.9;
+	if (frac > 0.9f) {
+		frac = 0.9f;
 	}
 
 	return frac;

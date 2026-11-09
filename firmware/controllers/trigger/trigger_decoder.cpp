@@ -283,7 +283,7 @@ angle_t PrimaryTriggerDecoder::syncEnginePhase(int divider, int remainder, angle
 	m_hasSynchronizedPhase = true;
 
 	if (totalShift > 0) {
-		m_phaseAdjustment = totalShift;
+		m_phaseAdjustment = static_cast<uint16_t>(totalShift);
 		// Resync angle changed - count how many times this happens
 		phaseResyncCounter++;
 		onTransitionEvent(TransitionEvent::EngineResync);
@@ -476,7 +476,7 @@ void TriggerDecoderBase::printGaps(const char * prefix,
 						continue;
 					}
 
-					float gap = 1.0 * toothDurations[i] / toothDurations[i + 1];
+					float gap = 1.0f * toothDurations[i] / toothDurations[i + 1];
 					if (std::isnan(gap)) {
 						efiPrintf("%s index=%d NaN gap, you have noise issues?", prefix, i);
 					} else {
@@ -518,7 +518,7 @@ expected<TriggerDecodeResult> TriggerDecoderBase::decodeTriggerEvent(
 	ScopePerf perf(PE::DecodeTriggerEvent);
 
 #if EFI_PROD_CODE
-  getTriggerCentral()->triggerElapsedUs = previousEventTimer.getElapsedUs();
+  getTriggerCentral()->triggerElapsedUs = static_cast<uint32_t>(previousEventTimer.getElapsedUs());
 #endif
 
 	if (previousEventTimer.getElapsedSecondsAndReset(nowNt) > 1) {
@@ -619,7 +619,7 @@ expected<TriggerDecodeResult> TriggerDecoderBase::decodeTriggerEvent(
 #else
 			if (printTriggerTrace) {
 				for (int i = 0;i<triggerShape.gapTrackingLength;i++) {
-					float gap = 1.0 * toothDurations[i] / toothDurations[i + 1];
+					float gap = 1.0f * toothDurations[i] / toothDurations[i + 1];
 					printf("%sindex=%d: gap=%.2f expected from %.2f to %.2f error=%s\r\n",
 							triggerConfiguration.PrintPrefix,
 							i,

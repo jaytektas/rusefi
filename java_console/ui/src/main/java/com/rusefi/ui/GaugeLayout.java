@@ -2,6 +2,9 @@ package com.rusefi.ui;
 
 import com.rusefi.core.preferences.storage.Node;
 import com.rusefi.ui.widgets.GaugeDisplayKind;
+import com.rusefi.ui.widgets.GaugeScaleOverrides;
+import com.rusefi.ui.widgets.tune.IndicatorStripSettings;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.geom.Rectangle2D;
 import java.io.IOException;
@@ -10,6 +13,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
 
@@ -21,6 +25,9 @@ import java.util.Properties;
  * switching back to Grid discards it. Free gauges store their position and size as
  * fractions of the gauge area; a higher index is drawn on top. Grid-mode files are
  * written as version 1, so they stay readable by older consoles.
+ * <p>
+ * The indicator strip (order, hidden chips, custom indicators) is written under {@link #INDICATORS}.
+ * Older consoles ignore those keys; a file without them leaves the strip as it is when loaded.
  */
 final class GaugeLayout {
     static final String ROWS = "gauges_rows";
@@ -36,11 +43,14 @@ final class GaugeLayout {
     static final String WIDTH = "w";
     static final String HEIGHT = "h";
     static final int MAX_FREE_GAUGES = 64;
+    static final String INDICATORS = "indicators.";
     /** Smallest free gauge, as a fraction of the gauge area. */
     static final double MIN_FREE_SIZE = 0.02;
     // Tolerates rounding in fractions written by Double.toString.
     private static final double EPSILON = 1e-9;
-    private static final String[] ELEMENT_PROPERTIES = {"gauge", "type", "display"};
+    // Older consoles read only the keys they know, so the scale settings need no version bump.
+    private static final String[] ELEMENT_PROPERTIES = {"gauge", "type", "display",
+        GaugeScaleOverrides.MIN, GaugeScaleOverrides.MAX, GaugeScaleOverrides.DANGER, GaugeScaleOverrides.DECIMALS};
     private static final String[] BOUNDS_PROPERTIES = {X, Y, WIDTH, HEIGHT};
     private static final String[] GRAPH_PROPERTIES = {"sensor", "period", "auto_scale", "lower", "upper"};
 
@@ -82,6 +92,27 @@ final class GaugeLayout {
             && key.substring(FREE_ELEMENT.length()).matches("\\d+") || key.equals(FREE_COUNT));
     }
 
+    /** Independent copy of the free layout, for undo. */
+    static Node copyFreeLayout(Node config) {
+        Node snapshot = new Node();
+        int count = freeCount(config);
+        for (int i = 0; i < count; i++) {
+            copy(config.getChild(FREE_ELEMENT + i), snapshot.getChild(FREE_ELEMENT + i));
+        }
+        snapshot.setProperty(FREE_COUNT, count);
+        return snapshot;
+    }
+
+    /** Replaces the free layout with a copy of one taken by {@link #copyFreeLayout}. */
+    static void restoreFreeLayout(Node config, Node snapshot) {
+        clearFreeLayout(config);
+        int count = freeCount(snapshot);
+        for (int i = 0; i < count; i++) {
+            copy(snapshot.getChild(FREE_ELEMENT + i), config.getChild(FREE_ELEMENT + i));
+        }
+        config.setProperty(FREE_COUNT, count);
+    }
+
     static void setBounds(Node element, Rectangle2D.Double bounds) {
         element.setProperty(X, bounds.x);
         element.setProperty(Y, bounds.y);
@@ -113,6 +144,10 @@ final class GaugeLayout {
     }
 
     static void save(Path file, Node config) throws IOException {
+        save(file, config, null);
+    }
+
+    static void save(Path file, Node config, @Nullable IndicatorStripSettings indicators) throws IOException {
         boolean free = isFreeMode(config) && hasFreeLayout(config);
         Properties properties = new Properties();
         properties.setProperty("format", "rusefi-gauges");
@@ -131,6 +166,9 @@ final class GaugeLayout {
                 elementToFile(properties, FREE_ELEMENT + i, element);
                 copyToFile(properties, FREE_ELEMENT + i + ".", element, BOUNDS_PROPERTIES);
             }
+        }
+        if (indicators != null) {
+            indicators.toFile(properties, INDICATORS);
         }
         // Validate before opening (and potentially truncating) the destination.
         decode(properties);
@@ -187,6 +225,10 @@ final class GaugeLayout {
                 setBounds(element, boundsFromFile(properties, FREE_ELEMENT + i + "."));
             }
         }
+        Node indicators = IndicatorStripSettings.fromFile(properties, INDICATORS);
+        if (indicators != null) {
+            layout.getConfig().put(IndicatorStripSettings.NODE, indicators);
+        }
         return layout;
     }
 
@@ -198,6 +240,11 @@ final class GaugeLayout {
         }
         element.setProperty("gauge", gauge);
         copyFromFile(properties, prefix, element, "type", "display");
+        copyFromFile(properties, prefix, element, GaugeScaleOverrides.KEYS);
+        GaugeScaleOverrides scale = GaugeScaleOverrides.read(element);
+        if (scale.getMin() != null && scale.getMax() != null && !(scale.getMin() < scale.getMax())) {
+            throw new IOException("Invalid scale for " + name + ": min must be below max");
+        }
         for (String graph : new String[]{"top", "bottom"}) {
             copyFromFile(properties, prefix + graph + ".", element.getChild(graph), GRAPH_PROPERTIES);
         }
@@ -267,6 +314,8 @@ final class GaugeLayout {
                 }
             } else if (key.equals("display")) {
                 valid = GaugeDisplayKind.lookup(value) != null;
+            } else if (Arrays.asList(GaugeScaleOverrides.KEYS).contains(key)) {
+                valid = GaugeScaleOverrides.isValid(key, value);
             } else if (key.equals("sensor")) {
                 valid = !value.trim().isEmpty();
             }

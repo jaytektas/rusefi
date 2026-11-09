@@ -15,9 +15,12 @@ import java.awt.event.HierarchyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -26,6 +29,7 @@ public final class CalibrationPanelWorkspace {
     public static final String CONFIG_KEY = "detached_panels";
     private final UIContext uiContext;
     private final Node config;
+    private final Node tableOrientationConfig;
     private final CalibrationDialogWidget primary;
     private final JScrollPane primaryScroll;
     private final DetachPanelLayer layer;
@@ -33,9 +37,13 @@ public final class CalibrationPanelWorkspace {
     private final WindowFactory windowFactory;
     private final Supplier<List<Rectangle>> screens;
     private Consumer<ConfigurationImage> onConfigChange = image -> { };
-    private Consumer<String> onShowInPinout = value -> { };
+    private PinoutLink onShowInPinout = value -> { };
+    /** Passes show and preview on to whichever link is set when the button is used. */
+    private final PinoutLink pinoutLink = PinoutLink.forwarding(() -> onShowInPinout);
     private IniFileModel ini;
     private ConfigurationImage image;
+    private String primaryKey;
+    private byte[] detachedImageContent;
     private Window owner;
     private boolean restoring;
     private boolean synchronizing;
@@ -48,22 +56,34 @@ public final class CalibrationPanelWorkspace {
     };
 
     public CalibrationPanelWorkspace(UIContext uiContext, Node config) {
-        this(uiContext, config, SwingPanelWindow::new, CalibrationPanelWorkspace::usableScreens);
+        this(uiContext, config, null);
+    }
+
+    public CalibrationPanelWorkspace(UIContext uiContext, Node config, Node tableOrientationConfig) {
+        this(uiContext, config, tableOrientationConfig, SwingPanelWindow::new,
+            CalibrationPanelWorkspace::usableScreens);
     }
 
     // Window factory keeps persistence and edit synchronization testable without a display.
     CalibrationPanelWorkspace(UIContext uiContext, Node config, WindowFactory windowFactory,
                               Supplier<List<Rectangle>> screens) {
+        this(uiContext, config, null, windowFactory, screens);
+    }
+
+    CalibrationPanelWorkspace(UIContext uiContext, Node config, Node tableOrientationConfig,
+                              WindowFactory windowFactory, Supplier<List<Rectangle>> screens) {
         this.uiContext = uiContext;
         this.config = config == null ? new Node() : config;
+        this.tableOrientationConfig = tableOrientationConfig == null ? new Node() : tableOrientationConfig;
         this.windowFactory = windowFactory;
         this.screens = screens;
-        primary = new CalibrationDialogWidget(uiContext);
+        primary = new CalibrationDialogWidget(uiContext, this.tableOrientationConfig);
         primaryScroll = new JScrollPane(primary.getViewportPane());
         layer = new DetachPanelLayer(primaryScroll, primary.getPanelFrame(), this::detachCurrentPanel);
         primary.setOnViewChanged(this::primaryViewChanged);
+        primary.setOnTableOrientationChange(() -> orientationChanged(primary));
         primary.setOnConfigChange(changed -> edited(primary, changed));
-        primary.setOnShowInPinout(value -> onShowInPinout.accept(value));
+        primary.setOnShowInPinout(pinoutLink);
         for (int i = 0; i < this.config.getIntProperty("count", 0); i++) {
             Node saved = this.config.getChild("panel" + i);
             String key = saved.getProperty("key");
@@ -94,7 +114,7 @@ public final class CalibrationPanelWorkspace {
         onConfigChange = listener;
     }
 
-    public void setOnShowInPinout(Consumer<String> listener) {
+    public void setOnShowInPinout(PinoutLink listener) {
         onShowInPinout = listener;
     }
 
@@ -129,22 +149,33 @@ public final class CalibrationPanelWorkspace {
         if (synchronizing || destroyed) {
             return;
         }
-        ini = primary.getCurrentIniFileModel();
-        image = primary.getWorkingImage();
+        IniFileModel currentIni = primary.getCurrentIniFileModel();
+        ConfigurationImage currentImage = primary.getWorkingImage();
+        String currentKey = primary.getCurrentKey();
+        boolean onlyNavigated = !Objects.equals(primaryKey, currentKey)
+            && ini == currentIni && hasSameContent(detachedImageContent, currentImage);
+        ini = currentIni;
+        image = currentImage;
+        primaryKey = currentKey;
+        detachedImageContent = copyContent(currentImage);
         layer.setAvailable(image != null && new CalibrationPanelKey(primary.getCurrentKey()).isSupported(ini));
-        refreshDetached(null);
+        if (!onlyNavigated) {
+            refreshDetached(null);
+        }
     }
 
     /** [tag:detached_calibration_sync] Every view edits a clone. Publish to all peers before
      * notifying the session/toolbar, so a subsequent edit or burn cannot use an older image.
      * The source stays intact to preserve its text caret and table/curve drag state.
-     * Primary replacements (undo, discard, navigation, load/reconnect) use the same fan-out.
+     * Primary replacements (undo, discard, load/reconnect) use the same fan-out; navigation
+     * only fans out when it also changes image contents or the INI model.
      */
     private void edited(CalibrationDialogWidget source, ConfigurationImage changed) {
         if (synchronizing || destroyed) {
             return;
         }
         image = changed;
+        detachedImageContent = copyContent(changed);
         synchronizing = true;
         try {
             if (source != primary) {
@@ -155,6 +186,50 @@ public final class CalibrationPanelWorkspace {
             synchronizing = false;
         }
         onConfigChange.accept(changed);
+    }
+
+    private void orientationChanged(CalibrationDialogWidget source) {
+        SwingUtilities.invokeLater(() -> {
+            if (destroyed || image == null) {
+                return;
+            }
+            synchronizing = true;
+            try {
+                if (source != primary && primary.getCurrentKey() != null) {
+                    refresh(primary, primaryScroll, new CalibrationPanelKey(primary.getCurrentKey()));
+                }
+                refreshDetached(source);
+            } finally {
+                synchronizing = false;
+            }
+        });
+    }
+
+    /**
+     * Rebuilds the open dialog and every detached panel at the same scroll position, keeping edits;
+     * for display choices that rows read when built ("Descriptions" on the Tuning toolbar).
+     */
+    public void rebuildViews() {
+        if (destroyed || image == null) {
+            return;
+        }
+        synchronizing = true;
+        try {
+            if (primary.getCurrentKey() != null) {
+                refresh(primary, primaryScroll, new CalibrationPanelKey(primary.getCurrentKey()));
+            }
+            refreshDetached(null);
+        } finally {
+            synchronizing = false;
+        }
+    }
+
+    private static byte[] copyContent(ConfigurationImage image) {
+        return image == null ? null : image.getContent().clone();
+    }
+
+    private static boolean hasSameContent(byte[] content, ConfigurationImage image) {
+        return content == null ? image == null : image != null && Arrays.equals(content, image.getContent());
     }
 
     public void detachCurrentPanel() {
@@ -174,6 +249,34 @@ public final class CalibrationPanelWorkspace {
         saveLayout();
     }
 
+    /**
+     * Opens a menu page in its own window from any tab, centred on the console, or brings the page's
+     * window to the front when it is already open.
+     *
+     * @return false while there is no tune to show or the loaded INI has no such page
+     */
+    public boolean openPanel(String key) {
+        CalibrationPanelKey panelKey = new CalibrationPanelKey(key);
+        if (destroyed || image == null || !panelKey.isSupported(ini)) {
+            return false;
+        }
+        DetachedPanel panel = panels.get(panelKey);
+        if (panel == null) {
+            panel = new DetachedPanel(panelKey, null);
+            panels.put(panelKey, panel);
+        }
+        if (panel.window == null) {
+            Rectangle screen = owner == null ? screens.get().get(0) : screenForBounds(owner.getBounds(), screens.get());
+            openPanel(panel, null, screen);
+        }
+        // the windows of other pages saved earlier open too, as after a detach
+        restoring = true;
+        refreshDetached(null);
+        panel.window.toFront();
+        saveLayout();
+        return true;
+    }
+
     private void refreshDetached(CalibrationDialogWidget source) {
         for (DetachedPanel panel : panels.values()) {
             if (image == null || !panel.key.isSupported(ini)) {
@@ -181,8 +284,10 @@ public final class CalibrationPanelWorkspace {
                 continue;
             }
             if (panel.window == null && restoring) {
-                Rectangle screen = screens.get().get(0);
-                openPanel(panel, new Point(screen.x + 40, screen.y + 40));
+                List<Rectangle> availableScreens = screens.get();
+                Rectangle screen = owner == null ? availableScreens.get(0)
+                    : screenForBounds(owner.getBounds(), availableScreens);
+                openPanel(panel, new Point(screen.x + 40, screen.y + 40), screen);
             } else if (panel.widget != null && panel.widget != source) {
                 refresh(panel.widget, panel.scroll, panel.key);
             }
@@ -192,22 +297,27 @@ public final class CalibrationPanelWorkspace {
         }
     }
 
-    private void openPanel(DetachedPanel panel, Point position) {
-        panel.widget = new CalibrationDialogWidget(uiContext);
+    /** @param position where a fresh window goes, or null to centre it on the owner */
+    private void openPanel(DetachedPanel panel, Point position, Rectangle screen) {
+        panel.widget = new CalibrationDialogWidget(uiContext, tableOrientationConfig);
         panel.scroll = new JScrollPane(panel.widget.getViewportPane());
         panel.widget.setOnConfigChange(changed -> edited(panel.widget, changed));
-        panel.widget.setOnShowInPinout(value -> onShowInPinout.accept(value));
+        CalibrationDialogWidget widget = panel.widget;
+        panel.widget.setOnTableOrientationChange(() -> orientationChanged(widget));
+        panel.widget.setOnShowInPinout(pinoutLink);
         refresh(panel.widget, panel.scroll, panel.key);
         panel.window = windowFactory.create(owner, title(panel.key), panel.scroll,
             () -> closePanel(panel.key), () -> splitPanel(panel.key), !panel.key.splitParts(ini).isEmpty(), bounds -> {
                 panel.bounds = new Rectangle(bounds);
                 saveLayout();
             });
-        if (panel.bounds == null) {
+        boolean fresh = panel.bounds == null;
+        if (fresh) {
             panel.bounds = panel.window.getBounds();
-            panel.bounds.setLocation(position);
+            panel.bounds.setLocation(position != null ? position
+                : centred(owner == null ? screen : owner.getBounds(), panel.bounds.getSize()));
         }
-        panel.bounds = fitBounds(panel.bounds, screens.get());
+        panel.bounds = fitBounds(panel.bounds, fresh ? Collections.singletonList(screen) : screens.get());
         panel.window.setBounds(panel.bounds);
         panel.widget.setActive(true);
         panel.window.show();
@@ -281,7 +391,8 @@ public final class CalibrationPanelWorkspace {
                 panels.put(part, child);
             }
             if (child.window == null) {
-                openPanel(child, new Point(origin.x + offset, origin.y + offset));
+                Rectangle screen = screenForBounds(origin, screens.get());
+                openPanel(child, new Point(origin.x + offset, origin.y + offset), screen);
             }
             child.window.toFront();
             offset += 32;
@@ -350,6 +461,18 @@ public final class CalibrationPanelWorkspace {
     }
 
     static Rectangle fitBounds(Rectangle bounds, List<Rectangle> screens) {
+        Rectangle screen = screenForBounds(bounds, screens);
+        int width = Math.min(screen.width, Math.max(1, bounds.width));
+        int height = Math.min(screen.height, Math.max(1, bounds.height));
+        return new Rectangle(Math.max(screen.x, Math.min(bounds.x, screen.x + screen.width - width)),
+            Math.max(screen.y, Math.min(bounds.y, screen.y + screen.height - height)), width, height);
+    }
+
+    private static Point centred(Rectangle area, Dimension size) {
+        return new Point(area.x + (area.width - size.width) / 2, area.y + (area.height - size.height) / 2);
+    }
+
+    private static Rectangle screenForBounds(Rectangle bounds, List<Rectangle> screens) {
         Rectangle screen = screens.get(0);
         long bestArea = 0;
         for (Rectangle candidate : screens) {
@@ -360,10 +483,7 @@ public final class CalibrationPanelWorkspace {
                 screen = candidate;
             }
         }
-        int width = Math.min(screen.width, Math.max(1, bounds.width));
-        int height = Math.min(screen.height, Math.max(1, bounds.height));
-        return new Rectangle(Math.max(screen.x, Math.min(bounds.x, screen.x + screen.width - width)),
-            Math.max(screen.y, Math.min(bounds.y, screen.y + screen.height - height)), width, height);
+        return screen;
     }
 
     private static List<Rectangle> usableScreens() {

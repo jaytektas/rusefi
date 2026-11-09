@@ -1,15 +1,27 @@
 package com.rusefi.ui;
 
+import com.opensr5.ini.GaugeCategoryModel;
+import com.opensr5.ini.IniFileModel;
 import com.rusefi.core.preferences.storage.Node;
 import com.rusefi.ui.widgets.BarGauge;
 import com.rusefi.ui.widgets.DigitalGauge;
 import com.rusefi.ui.widgets.GaugeDisplayKind;
+import com.rusefi.ui.widgets.GaugeOptionsButton;
+import com.rusefi.ui.widgets.GaugePopups;
+import com.rusefi.ui.widgets.GaugeScaleOverrides;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.InputEvent;
+import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
 class GaugesGridElementTest {
     @Test
@@ -104,6 +116,100 @@ class GaugesGridElementTest {
                 element.destroy();
             }
         });
+    }
+
+    @Test
+    void scaleSettingsAreStoredPerSlotAndDroppedWhenTheGaugeChanges() throws Throwable {
+        List<JPopupMenu> shown = new ArrayList<>();
+        GaugePopups.setShownForUnitTest(shown::add);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                UIContext context = GaugesPanelLayoutTest.createContext();
+                IniFileModel ini = context.iniFileState.getIniFileModel();
+                GaugeCategoryModel category = new GaugeCategoryModel("Test",
+                    Arrays.asList(ini.getGauge("RPMGauge"), ini.getGauge("CustomGauge")));
+                when(ini.getGaugeCategories()).thenReturn(Collections.singletonMap("Test", category));
+                Node config = new Node();
+                config.setProperty("gauge", "RPMGauge");
+                GaugesGridElement element = GaugesGridElement.create(context, config, "RPMGauge");
+                try {
+                    GaugeScaleDialog dialog = element.createScaleDialog();
+                    assertEquals("0", dialog.min.getClientProperty("JTextField.placeholderText"));
+                    assertEquals("8000", dialog.max.getClientProperty("JTextField.placeholderText"),
+                        "Expression units are not shown");
+                    assertEquals("", dialog.max.getText(), "Nothing overridden yet");
+                    assertEquals("INI default (0)", dialog.decimals.getSelectedItem());
+
+                    element.setScaleOverrides(new GaugeScaleOverrides(null, 6000.0, 5500.5, 1));
+                    assertEquals("6000.0", config.getProperty(GaugeScaleOverrides.MAX));
+                    assertNull(config.getProperty(GaugeScaleOverrides.MIN, null));
+                    dialog = element.createScaleDialog();
+                    assertEquals("6000", dialog.max.getText());
+                    assertEquals("5500.5", dialog.danger.getText());
+                    assertEquals("1", dialog.decimals.getSelectedItem());
+                    assertEquals(new GaugeScaleOverrides(null, 6000.0, 5500.5, 1), dialog.parse().overrides);
+                    dialog.reset.doClick(0);
+                    assertEquals(GaugeScaleOverrides.NONE, dialog.parse().overrides, "Reset clears every field");
+
+                    ((AbstractButton) ((Container) gauge(element)).getComponent(0)).doClick(0);
+                    assertEquals(Arrays.asList(GaugesGridElement.DISPLAY_AS, GaugesGridElement.SCALE,
+                        "Pop out to window"), visibleItems(shown.get(shown.size() - 1)), "The gear holds the display options");
+
+                    rightClick(gauge(element));
+                    JPopupMenu menu = shown.get(shown.size() - 1);
+                    assertEquals(Arrays.asList(GaugeOptionsButton.TOOLTIP, "Test"), visibleItems(menu),
+                        "Right-click starts with the gear's options, then lists the gauge groups");
+
+                    findItem(menu, "CustomGauge").doClick(0);
+                    assertEquals("CustomGauge", config.getProperty("gauge"));
+                    assertTrue(GaugeScaleOverrides.read(config).isEmpty(), "Settings for RPM do not carry over");
+                } finally {
+                    element.destroy();
+                }
+            });
+        } finally {
+            GaugePopups.setShownForUnitTest(null);
+        }
+    }
+
+    @Test
+    void scaleDialogNeedsTheIniDefinition() throws Throwable {
+        SwingUtilities.invokeAndWait(() -> {
+            GaugesGridElement element = GaugesGridElement.create(new UIContext(), new Node(), "RPMGauge");
+            try {
+                assertNull(element.createScaleDialog(), "No .ini gauge definition yet");
+            } finally {
+                element.destroy();
+            }
+        });
+    }
+
+    private static void rightClick(Component target) {
+        target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(),
+            InputEvent.BUTTON3_DOWN_MASK, 10, 10, 1, true, MouseEvent.BUTTON3));
+    }
+
+    private static List<String> visibleItems(JPopupMenu menu) {
+        List<String> items = new ArrayList<>();
+        for (Component child : menu.getComponents()) {
+            if (child instanceof JMenuItem && child.isVisible()) {
+                items.add(((JMenuItem) child).getText());
+            }
+        }
+        return items;
+    }
+
+    private static JMenuItem findItem(MenuElement menu, String text) {
+        for (MenuElement child : menu.getSubElements()) {
+            if (child instanceof JMenuItem && !(child instanceof JMenu) && text.equals(((JMenuItem) child).getText())) {
+                return (JMenuItem) child;
+            }
+            JMenuItem found = findItem(child, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private static Component gauge(GaugesGridElement element) {

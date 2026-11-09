@@ -72,24 +72,20 @@ bool TriggerCentral::isVvtPositionFresh(uint8_t bankIndex, uint8_t camIndex) con
  * @return angle since trigger synchronization point, NOT angle since TDC.
  */
 expected<float> TriggerCentral::getCurrentEnginePhase(efitick_t nowNt) const {
+	// under lock to avoid mismatched tooth phase and time
+	chibios_rt::CriticalSectionLocker csl;
+
+	return getCurrentEnginePhaseI(nowNt);
+}
+
+expected<float> TriggerCentral::getCurrentEnginePhaseI(efitick_t nowNt) const {
 	floatus_t oneDegreeUs = engine->rpmCalculator.oneDegreeUs;
 
 	if (std::isnan(oneDegreeUs)) {
 		return unexpected;
 	}
 
-	float elapsed;
-	float toothPhase;
-
-	{
-		// under lock to avoid mismatched tooth phase and time
-		chibios_rt::CriticalSectionLocker csl;
-
-		elapsed = m_lastToothTimer.getElapsedUs(nowNt);
-		toothPhase = m_lastToothPhaseFromSyncPoint;
-	}
-
-	return toothPhase + elapsed / oneDegreeUs;
+	return m_lastToothPhaseFromSyncPoint + m_lastToothTimer.getElapsedUs(nowNt) / oneDegreeUs;
 }
 
 /**
@@ -841,7 +837,7 @@ bool TriggerCentral::isToothExpectedNow(efitick_t timestamp) {
 
 			// Absolute error from last tooth
 			float absError = absF(angleError);
-			float isRpmEnough = Sensor::getOrZero(SensorType::Rpm) > 1000;
+			bool isRpmEnough = Sensor::getOrZero(SensorType::Rpm) > 1000;
 			// TODO: configurable threshold
 			bool reportTimingError = isRpmEnough && absError > 10 && absError < 180;
 #if EFI_ENGINE_CONTROL

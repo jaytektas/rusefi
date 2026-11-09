@@ -1,6 +1,7 @@
 package com.rusefi.ui.widgets.tune;
 
 import com.devexperts.logging.Logging;
+import com.formdev.flatlaf.FlatClientProperties;
 import com.opensr5.ConfigurationImage;
 import com.opensr5.ConfigurationImageWithMeta;
 import com.opensr5.ini.IniFileModel;
@@ -16,6 +17,7 @@ import com.rusefi.tune.xml.Msq;
 import com.rusefi.tune.xml.MsqFactory;
 import com.rusefi.ui.UIContext;
 import com.rusefi.ui.basic.LoadTuneHelper;
+import com.rusefi.ui.widgets.JoinedButtons;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -42,6 +44,8 @@ public class TuningToolbarWidget {
     private static final int UPLOAD_DELAY_MS = 100;
 
     private final JPanel panel;
+    private final JButton burnButton;
+    private final JButton discardButton;
 
     /** [tag:offline_tune] Shows offline / unburned-edit state. Empty when connected and clean. */
     private final JLabel stateLabel = new JLabel();
@@ -60,6 +64,7 @@ public class TuningToolbarWidget {
 
     private AbstractAction loadTuneAction;
     private AbstractAction saveTuneAction;
+    private AbstractAction saveTuneAsAction;
     private final JFileChooser saveTuneChooser = createMsqFileChooser();
 
     private final Timer undoCommitTimer;
@@ -124,10 +129,10 @@ public class TuningToolbarWidget {
         });
         uploadTimer.setRepeats(false);
 
-        JButton burnButton = getBurnToEcuButton(uiContext, right, sessionImage);
+        burnButton = getBurnToEcuButton(uiContext, right, sessionImage);
         burnButton.setEnabled(uiContext.getBinaryProtocol() != null);
 
-        JButton discardButton = getDiscardButton(uiContext, right, sessionImage, currentKey, updateButtons);
+        discardButton = getDiscardButton(uiContext, right, sessionImage, currentKey, updateButtons);
         discardButton.setEnabled(baselineImage != null);
 
         buildLoadTuneAction(uiContext, right, currentKey, sessionImage,
@@ -168,11 +173,16 @@ public class TuningToolbarWidget {
             updateButtons.run();
         });
 
-        panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        panel = new JPanel(new FlowLayout(FlowLayout.LEFT, JoinedButtons.ROW_GAP, 6));
+        // sits on the Tuning tab's toolbar strip (TuningPane), which supplies the colour
+        panel.setOpaque(false);
+        stateLabel.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 0));
+        // same controls as the Gauges and Lua toolbars [tag:console_theme]: 36 px tall, primary
+        // Burn, outlined groups; Undo and Redo joined as one control
+        burnButton.setPreferredSize(new Dimension(burnButton.getPreferredSize().width + 24, JoinedButtons.HEIGHT));
         panel.add(burnButton);
-        panel.add(discardButton);
-        panel.add(undoButton);
-        panel.add(redoButton);
+        panel.add(new JoinedButtons(discardButton));
+        panel.add(new JoinedButtons(undoButton, redoButton));
         panel.add(stateLabel);
 
         // [tag:offline_tune] Refresh the state label whenever offline mode toggles (e.g. Load Tune
@@ -188,7 +198,7 @@ public class TuningToolbarWidget {
     public void refreshState() {
         boolean dirty = hasUnsavedChanges(sessionImage.get());
         stateLabel.setText(stateLabelText(uiContext.isOfflineMode(), dirty));
-        stateLabel.setForeground(dirty ? new Color(0xB0, 0x60, 0x00) : Color.GRAY);
+        stateLabel.setForeground(dirty ? TuningStyle.dirty() : TuningStyle.muted());
     }
 
     /**
@@ -207,6 +217,7 @@ public class TuningToolbarWidget {
                                                 AtomicReference<ConfigurationImage> sessionImage) {
         JButton burnButton = new JButton("Burn to ECU");
         burnButton.setToolTipText("Save the current tune to persistent ECU memory");
+        burnButton.putClientProperty(FlatClientProperties.STYLE_CLASS, "primary");
         burnButton.addActionListener(e -> burnToEcuAndThen(right, null));
         return burnButton;
     }
@@ -239,13 +250,7 @@ public class TuningToolbarWidget {
 
     /** Call when ECU connects to enable the burn button. */
     public void onEcuConnected() {
-        Component[] components = panel.getComponents();
-        for (Component c : components) {
-            if (c instanceof JButton && "Burn to ECU".equals(((JButton) c).getText())) {
-                ((JButton) c).setEnabled(true);
-                break;
-            }
-        }
+        burnButton.setEnabled(true);
         refreshState();
     }
 
@@ -289,9 +294,11 @@ public class TuningToolbarWidget {
                 if (firmwareUpdateInProgress) {
                     return;
                 }
+                TuneFileFolder.openIn(chooser);
                 if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
                     return;
                 }
+                TuneFileFolder.remember(chooser.getSelectedFile());
                 final String path = chooser.getSelectedFile().getAbsolutePath();
                 final String fileName = chooser.getSelectedFile().getName();
 
@@ -355,8 +362,8 @@ public class TuningToolbarWidget {
                                         // [tag:offline_tune] Loading a tune with no ECU attached is an offline session.
                                         if (loadedWhileDisconnected) {
                                             uiContext.setOfflineMode(true);
-                                            uiContext.setOfflineTunePath(path);
                                         }
+                                        uiContext.setTuneFilePath(path);
                                         String key = currentKey.get();
                                         right.update(key, targetIni, newImage);
                                         // Adopt the loaded tune as baseline (enables discard + refreshes state label).
@@ -414,9 +421,26 @@ public class TuningToolbarWidget {
                 saveTuneAndThen(right, null);
             }
         };
+        saveTuneAsAction = new AbstractAction(LoadTuneHelper.SAVE_TUNE_AS_TEXT) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                saveTuneAsAndThen(right, null);
+            }
+        };
     }
 
+    /** Saves to the current tune file without asking; asks for a file when there is none yet. */
     public void saveTuneAndThen(CalibrationDialogWidget right, Runnable onSuccess) {
+        String current = uiContext.getTuneFilePath();
+        if (current != null) {
+            saveTuneToPathAndThen(right, current, onSuccess);
+        } else {
+            saveTuneAsAndThen(right, onSuccess);
+        }
+    }
+
+    /** Asks for a file, starting at the current tune file, and makes the chosen file the current one. */
+    public void saveTuneAsAndThen(CalibrationDialogWidget right, Runnable onSuccess) {
         IniFileModel ini = uiContext.iniFileState.getIniFileModel();
         BinaryProtocol bp = uiContext.getBinaryProtocol();
         ConfigurationImage image = imageToSave(
@@ -429,13 +453,28 @@ public class TuningToolbarWidget {
             errorHandler.accept("No configuration loaded");
             return;
         }
+        String current = uiContext.getTuneFilePath();
+        if (current != null) {
+            saveTuneChooser.setSelectedFile(new File(current));
+        } else {
+            saveTuneChooser.setSelectedFile(null);
+            TuneFileFolder.openIn(saveTuneChooser);
+        }
         if (saveTuneChooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) {
             return;
         }
         File selected = saveTuneChooser.getSelectedFile();
+        TuneFileFolder.remember(selected);
         String path = selected.getAbsolutePath();
         if (!path.toLowerCase().endsWith(".msq")) {
             path += ".msq";
+        }
+        // JFileChooser does not ask before replacing a file; the current file is replaced by plain Save anyway
+        if (new File(path).exists() && !new File(path).equals(current == null ? null : new File(current))
+                && JOptionPane.showConfirmDialog(null, new File(path).getName() + " already exists. Replace it?",
+                LoadTuneHelper.SAVE_TUNE_AS_TEXT, JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)
+                != JOptionPane.YES_OPTION) {
+            return;
         }
         saveTuneToPathAndThen(ini, image, path, onSuccess);
     }
@@ -462,9 +501,12 @@ public class TuningToolbarWidget {
         new Thread(() -> {
             try {
                 MsqFactory.valueOf(finalImage, ini).writeXmlFile(finalPath);
-                if (onSuccess != null) {
-                    SwingUtilities.invokeLater(onSuccess);
-                }
+                SwingUtilities.invokeLater(() -> {
+                    uiContext.setTuneFilePath(finalPath);
+                    if (onSuccess != null) {
+                        onSuccess.run();
+                    }
+                });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> errorHandler.accept("Failed to save tune: " + ex.getMessage()));
             }
@@ -496,6 +538,10 @@ public class TuningToolbarWidget {
         return saveTuneAction;
     }
 
+    public AbstractAction getSaveTuneAsAction() {
+        return saveTuneAsAction;
+    }
+
     /**
      * @return true if {@code current} differs from the loaded baseline (i.e. there are pending edits).
      * If there is no baseline yet, any non-null image counts as a change.
@@ -518,13 +564,7 @@ public class TuningToolbarWidget {
     /** Sets the baseline image for discard and enables the discard button. */
     public void setBaselineImage(ConfigurationImage image) {
         this.baselineImage = image;
-        Component[] components = panel.getComponents();
-        for (Component c : components) {
-            if (c instanceof JButton && "Discard changes".equals(((JButton) c).getText())) {
-                ((JButton) c).setEnabled(image != null);
-                break;
-            }
-        }
+        discardButton.setEnabled(image != null);
         refreshState();
     }
 
@@ -590,13 +630,7 @@ public class TuningToolbarWidget {
         undoButton.setEnabled(false);
         redoButton.setEnabled(false);
         // Disable burn button when ECU disconnects
-        Component[] components = panel.getComponents();
-        for (Component c : components) {
-            if (c instanceof JButton && "Burn to ECU".equals(((JButton) c).getText())) {
-                ((JButton) c).setEnabled(false);
-                break;
-            }
-        }
+        burnButton.setEnabled(false);
         refreshState();
     }
 }

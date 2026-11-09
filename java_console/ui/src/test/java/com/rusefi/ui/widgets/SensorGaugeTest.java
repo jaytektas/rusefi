@@ -56,11 +56,11 @@ class SensorGaugeTest {
             context.getLinkManager().setBinaryProtocolForTests(protocol);
             JPanelWithListener wrapper = new JPanelWithListener(new BorderLayout());
             AtomicReference<String> selected = new AtomicReference<>();
-            JPopupMenu menu = SensorGauge.createPopupMenu(context, wrapper, selected::set, null, () -> { });
+            JPopupMenu menu = SensorGauge.createPopupMenu(context, wrapper, selected::set, null);
             List<String> expected = java.util.Collections.singletonList("GPPWM Outputs / Cooling fan");
-            assertEquals(expected, catalogPaths(changeGaugeMenu(menu)));
-            assertEquals(Arrays.asList(SensorGauge.CHANGE_GAUGE, SensorGauge.POP_OUT), visibleItems(menu),
-                "Without a query the normal menu is shown");
+            assertEquals(expected, catalogPaths(menu));
+            assertEquals(java.util.Collections.singletonList("GPPWM Outputs"), visibleItems(menu),
+                "Without a query the gauge groups are shown");
             JTextField search = searchField(menu);
             search.setText("cooling fan");
             assertEquals(expected, visibleItems(menu), "A query shows flat Group / Gauge results only");
@@ -69,7 +69,7 @@ class SensorGaugeTest {
             search.setText("stringValue");
             assertEquals(java.util.Collections.singletonList("No matching gauges"), visibleItems(menu));
             search.setText("");
-            assertEquals(Arrays.asList(SensorGauge.CHANGE_GAUGE, SensorGauge.POP_OUT), visibleItems(menu));
+            assertEquals(java.util.Collections.singletonList("GPPWM Outputs"), visibleItems(menu));
 
             search.setText("cooling");
             visibleMenuItem(menu, "GPPWM Outputs / Cooling fan").doClick(0);
@@ -77,7 +77,7 @@ class SensorGaugeTest {
             assertTrue(wrapper.getComponent(0) instanceof CircularGauge);
 
             selected.set(null);
-            menu = SensorGauge.createPopupMenu(context, wrapper, selected::set, null, () -> { });
+            menu = SensorGauge.createPopupMenu(context, wrapper, selected::set, null);
             search = searchField(menu);
             search.setText("fan");
             search.postActionEvent();
@@ -104,10 +104,10 @@ class SensorGaugeTest {
             context.iniFileState.setIniFileModelForTest(ini);
             assertNull(context.getBinaryProtocol());
             JPanelWithListener wrapper = new JPanelWithListener(new BorderLayout());
-            JMenuItem displayAs = new JMenu("Display as");
-            JPopupMenu menu = SensorGauge.createPopupMenu(context, wrapper, name -> { }, displayAs, () -> { });
-            assertEquals(expectedPaths, catalogPaths(changeGaugeMenu(menu)));
-            assertEquals(Arrays.asList(SensorGauge.CHANGE_GAUGE, "Display as", SensorGauge.POP_OUT), visibleItems(menu));
+            List<String> groups = new ArrayList<>(ini.getGaugeCategories().keySet());
+            JPopupMenu menu = SensorGauge.createPopupMenu(context, wrapper, name -> { }, null);
+            assertEquals(expectedPaths, catalogPaths(menu));
+            assertEquals(groups, visibleItems(menu), "Gauge groups are at the top level, one step from right-click");
             JTextField search = searchField(menu);
             search.setText("not-a-gauge-in-this-ini");
             assertEquals(java.util.Collections.singletonList("No matching gauges"), visibleItems(menu));
@@ -116,32 +116,97 @@ class SensorGaugeTest {
             broad.add((expectedPaths.size() - GaugeMenuSearch.MAX_RESULTS) + " more - keep typing to narrow");
             assertEquals(broad, visibleItems(menu), "A broad query is capped to keep the popup on screen");
             search.setText("");
-            assertEquals(Arrays.asList(SensorGauge.CHANGE_GAUGE, "Display as", SensorGauge.POP_OUT), visibleItems(menu),
-                "Clearing search restores the normal menu");
+            assertEquals(groups, visibleItems(menu), "Clearing search restores the gauge groups");
 
             BinaryProtocol protocol = mock(BinaryProtocol.class);
             when(protocol.getIniFileNullable()).thenReturn(ini);
             context.getLinkManager().setBinaryProtocolForTests(protocol);
-            JPopupMenu connectedMenu = SensorGauge.createPopupMenu(context, wrapper, name -> { }, null, () -> { });
-            assertEquals(expectedPaths, catalogPaths(changeGaugeMenu(connectedMenu)));
+            JPopupMenu connectedMenu = SensorGauge.createPopupMenu(context, wrapper, name -> { }, null);
+            assertEquals(expectedPaths, catalogPaths(connectedMenu));
         });
     }
 
     @Test
-    void popOutItemRunsTheCallersAction() throws Throwable {
+    void optionsMenuHoldsDisplayOptionsAndPopOut() throws Throwable {
         SwingUtilities.invokeAndWait(() -> {
-            UIContext context = new UIContext();
-            context.iniFileState.setIniFileModelForTest(IniFileModelMocks.withGauges(CircularGaugeTest.model(0, 100, 80, 0)));
             int[] popOuts = {0};
-            JPopupMenu menu = SensorGauge.createPopupMenu(context, new JPanelWithListener(new BorderLayout()),
-                name -> { }, null, () -> popOuts[0]++);
+            JPopupMenu menu = SensorGauge.createOptionsMenu(
+                java.util.Collections.singletonList(new JMenu("Display as")), () -> popOuts[0]++);
+            assertEquals(Arrays.asList("Display as", SensorGauge.POP_OUT), visibleItems(menu));
             visibleMenuItem(menu, SensorGauge.POP_OUT).doClick(0);
             assertEquals(1, popOuts[0]);
         });
     }
 
-    static JMenu changeGaugeMenu(JPopupMenu menu) {
-        return (JMenu) visibleMenuItem(menu, SensorGauge.CHANGE_GAUGE);
+    /** The gear is hidden until the mouse is over the gauge, and opens the options menu. */
+    @Test
+    void gearAppearsOnHoverAndOpensTheOptionsMenu() throws Throwable {
+        List<JPopupMenu> shown = new ArrayList<>();
+        GaugePopups.setShownForUnitTest(shown::add);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                UIContext context = new UIContext();
+                context.iniFileState.setIniFileModelForTest(IniFileModelMocks.withGauges(CircularGaugeTest.model(0, 100, 80, 0)));
+                GaugeModel model = context.iniFileState.getIniFileModel().getGauges().values().iterator().next();
+                JPanelWithListener wrapper = new JPanelWithListener(new BorderLayout());
+                try {
+                    SensorGauge.createGaugeBody(context, model.getName(), wrapper, name -> { },
+                        java.util.Collections.singletonList(new JMenu("Display as")), GaugeDisplayKind.ROUND,
+                        GaugeScaleOverrides.NONE);
+                    JComponent gauge = (JComponent) wrapper.getComponent(0);
+                    gauge.setSize(200, 200);
+                    gauge.doLayout();
+                    GaugeOptionsButton gear = (GaugeOptionsButton) gauge.getComponent(0);
+                    assertEquals(new java.awt.Rectangle(200 - GaugeOptionsButton.SIZE - 6, 6,
+                        GaugeOptionsButton.SIZE, GaugeOptionsButton.SIZE), gear.getBounds(), "Top-right corner");
+                    assertFalse(gear.isVisible(), "Hidden until hovered");
+                    gauge.dispatchEvent(new java.awt.event.MouseEvent(gauge, java.awt.event.MouseEvent.MOUSE_ENTERED,
+                        System.currentTimeMillis(), 0, 50, 50, 0, false));
+                    assertTrue(gear.isVisible());
+
+                    gear.doClick(0);
+                    assertEquals(1, shown.size());
+                    assertEquals(Arrays.asList("Display as", SensorGauge.POP_OUT), visibleItems(shown.get(0)));
+                } finally {
+                    wrapper.removeAllChildrenAndListeners();
+                }
+            });
+        } finally {
+            GaugePopups.setShownForUnitTest(null);
+        }
+    }
+
+    @Test
+    void rightClickMenuStartsWithTheGaugeOptions() throws Throwable {
+        SwingUtilities.invokeAndWait(() -> {
+            UIContext context = new UIContext();
+            context.iniFileState.setIniFileModelForTest(
+                IniFileModelMocks.withGauges(CircularGaugeTest.model(0, 100, 80, 0)));
+            JMenuItem scale = new JMenuItem("Scale…");
+            boolean[] poppedOut = {false};
+            JPopupMenu menu = SensorGauge.createPopupMenu(context, new JPanelWithListener(new BorderLayout()),
+                name -> { }, java.util.Collections.singletonList(scale), GaugeDisplayKind.ROUND,
+                () -> poppedOut[0] = true);
+
+            JMenu options = (JMenu) menu.getComponent(0);
+            assertEquals(GaugeOptionsButton.TOOLTIP, options.getText(),
+                "The gear's menu is reachable even where another gauge hides the gear");
+            assertSame(scale, options.getMenuComponent(0));
+            JMenuItem popOut = (JMenuItem) options.getMenuComponent(options.getMenuComponentCount() - 1);
+            assertEquals(SensorGauge.POP_OUT, popOut.getText());
+            popOut.doClick(0);
+            assertTrue(poppedOut[0]);
+
+            JTextField search = searchField(menu);
+            int searchIndex = menu.getComponentIndex(search.getParent());
+            assertTrue(searchIndex > 0, "Gauge options is above the search bar");
+            search.setText("no such gauge");
+            Component firstResult = menu.getComponent(searchIndex + 2);
+            assertTrue(firstResult instanceof JMenuItem
+                    && "No matching gauges".equals(((JMenuItem) firstResult).getText()),
+                "Results stay right below the search bar: " + visibleItems(menu));
+            assertTrue(options.isVisible());
+        });
     }
 
     static JTextField searchField(JPopupMenu menu) {
@@ -170,9 +235,12 @@ class SensorGaugeTest {
         return items;
     }
 
-    static List<String> catalogPaths(JMenu catalog) {
+    static List<String> catalogPaths(JPopupMenu catalog) {
         List<String> paths = new ArrayList<>();
-        for (Component component : catalog.getMenuComponents()) {
+        for (Component component : catalog.getComponents()) {
+            if (!(component instanceof JMenu)) {
+                continue;
+            }
             JMenu category = (JMenu) component;
             for (Component child : category.getMenuComponents()) {
                 paths.add(category.getText() + " / " + ((JMenuItem) child).getText());
@@ -206,10 +274,10 @@ class SensorGaugeTest {
                 gauge.setValue(4000);
                 // Resolve the tune's 6000 RPM limit: range 0..8000, danger at 6000.
                 assertEquals(135, gauge.getProgressDegrees());
-                assertEquals(CircularGauge.PROGRESS.getRGB() & 0xFFFFFF, CircularGaugeTest.render(gauge, 400, 400).getRGB(70, 150) & 0xFFFFFF);
+                assertEquals(GaugeStyle.dialFill().getRGB() & 0xFFFFFF, CircularGaugeTest.render(gauge, 400, 400).getRGB(70, 150) & 0xFFFFFF);
                 gauge.setValue(6000);
                 assertEquals(203, gauge.getProgressDegrees());
-                assertEquals(CircularGauge.DANGER_FILL.getRGB() & 0xFFFFFF, CircularGaugeTest.render(gauge, 400, 400).getRGB(70, 150) & 0xFFFFFF);
+                assertEquals(GaugeStyle.dangerFill().getRGB() & 0xFFFFFF, CircularGaugeTest.render(gauge, 400, 400).getRGB(70, 150) & 0xFFFFFF);
             } finally {
                 wrapper.removeAllChildrenAndListeners();
             }
@@ -262,7 +330,7 @@ class SensorGaugeTest {
                     for (CircularGauge gauge : new CircularGauge[] {dashboardGauge.get(), dialogGauge.get()}) {
                         assertEquals(index == 0 ? "Cold" : "Warm", gauge.getTitle());
                         assertEquals(index == 0 ? "F" : "C", gauge.getUnitString());
-                        assertEquals(index == 0 ? "44.0" : "46.0", gauge.getDisplayText());
+                        assertEquals(index == 0 ? "43.0" : "45.0", gauge.getDisplayText());
                     }
                 });
             }
@@ -295,15 +363,15 @@ class SensorGaugeTest {
                 assertEquals(1, wrapper.getComponentCount());
                 original.set((CircularGauge) wrapper.getComponent(0));
                 assertEquals("20", original.get().getDisplayText());
-                assertTrue(original.get().getToolTipText().contains("Double-click to detach"));
+                assertTrue(original.get().getToolTipText().contains("double-click to detach"));
                 assertTrue(original.get().getMouseListeners().length > 0);
             });
             // Simulate the ECU thread. The rendered reading must be published atomically.
             sensors.setValue(43, model.getChannel());
-            assertEquals("44", original.get().getDisplayText());
+            assertEquals("43", original.get().getDisplayText());
             SwingUtilities.invokeAndWait(() -> wrapper.setActive(false));
             sensors.setValue(50, model.getChannel());
-            assertEquals("44", original.get().getDisplayText());
+            assertEquals("43", original.get().getDisplayText());
             SwingUtilities.invokeAndWait(() -> {
                 wrapper.setActive(true);
                 SensorGauge.createGaugeBody(context, model.getName(), wrapper, name -> { }, null);
@@ -311,7 +379,7 @@ class SensorGaugeTest {
                 assertEquals(1, wrapper.getMouseListeners().length);
             });
             sensors.setValue(60, model.getChannel());
-            assertEquals("44", original.get().getDisplayText(), "Removed gauge no longer receives data");
+            assertEquals("43", original.get().getDisplayText(), "Removed gauge no longer receives data");
             SwingUtilities.invokeAndWait(() ->
                 assertEquals("60", ((CircularGauge) wrapper.getComponent(0)).getDisplayText()));
         } finally {

@@ -56,8 +56,12 @@ Release template (copy/paste this for new release):
  - Nissan VK56DE (36-1-1) crank and PHASE cam triggers
 
 ### Fixed
+ - A failed configured A/C pressure sensor no longer re-enables the compressor after a pressure cut.
+ - VVT activation delay honors the full configured millisecond value, including fractions of a second.
  - Ignition schedule rebuilds now discharge the coil charged before its output mapping changed.
- - Invalid fuel-pressure readings use nominal pressure for injector duration and deadtime, and skip HPFP mass correction.
+ - Invalid fuel-pressure readings use nominal pressure for injector duration and skip HPFP mass correction.
+ - Injector dead time is interpolated at the configured reference pressure when compensation is None or sensed rail pressure is missing or invalid. #10463
+ - Injector dead time uses the configured reference pressure before its first periodic pressure update, instead of the first pressure-table row.
  - A GDI pump with zero configured cam lobes stays inactive and makes no fuel request.
  - Shift torque reduction ignores invalid sensor readings when selecting spark cut, ignition retard, and time limits.
  - Closed-loop VVT output stops when cam position feedback is missing or stale.
@@ -74,6 +78,7 @@ Release template (copy/paste this for new release):
  - overdwell protection causes Null-pointer deref and crash #9435
  - huge print in Lua walks into memory #10159
  - H723 bootloader fixes
+ - Suzuki K6A distributor trigger (EA21R Cappuccino) loses sync while cranking #7080
 
 ## August 2026 "Day 1631"
 

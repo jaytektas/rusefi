@@ -1,5 +1,7 @@
 package com.rusefi.maintenance;
 
+import com.rusefi.UiProperties;
+
 import com.rusefi.core.OsUtil;
 
 import com.rusefi.*;
@@ -267,6 +269,13 @@ public class DfuFlasher {
             : FindFileHelper.findFirmwareFileForConnectedBoard(connectedEcuTarget);
     }
 
+    /** The UI job completed board consent before acquiring active-update transport ownership. */
+    public static void runPreparedManualRecovery(UpdateOperationCallbacks callbacks, Runnable onJobFinished,
+                                                 ConnectedEcuTarget recoveryTarget) {
+        submitAction(() -> JobHelper.doJob(() -> ManualDfuRecovery.runSelected(recoveryTarget, callbacks,
+            (file, target) -> executeDfuAndPaintStatusPanel(callbacks, file, target)), onJobFinished));
+    }
+
     public static void runOpenBltInitialProgramming(UpdateOperationCallbacks callbacks, final Runnable onJobFinished,
                                                     final ConnectedEcuTarget connectedEcuTarget) {
         submitAction(() -> {
@@ -307,7 +316,7 @@ public class DfuFlasher {
             if (OsUtil.isLinux()) {
                 callbacks.logLine("STM32 DFU device 0483:df11 was not detected. Check the USB connection and lsusb access.");
             } else {
-                callbacks.logLine("*** DRIVER ERROR? *** Did you have a chance to try 'Install Drivers' button on top of rusEFI console start screen?");
+                callbacks.logLine("*** DRIVER ERROR? *** Did you have a chance to try 'Install Drivers' button on top of " + UiProperties.getDisplayName() + " start screen?");
             }
             return false;
         }

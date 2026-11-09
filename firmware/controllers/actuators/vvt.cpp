@@ -43,7 +43,7 @@ void VvtController::onFastCallback() {
 	m_isCltWarmEnough = Sensor::getOrZero(SensorType::Clt) > engineConfiguration->vvtControlMinClt;
 
 	auto nowNt = getTimeNowNt();
-	m_engineRunningLongEnough = engine->rpmCalculator.getSecondsSinceEngineStart(nowNt) > engineConfiguration->vvtActivationDelayMs / MS_PER_SECOND;
+	m_engineRunningLongEnough = engine->rpmCalculator.getSecondsSinceEngineStart(nowNt) > MS2SEC(engineConfiguration->vvtActivationDelayMs);
 
 	update();
 }
@@ -100,7 +100,7 @@ expected<angle_t> VvtController::getSetpoint() {
 	float target = m_targetMap->getValue(rpm, load);
 
 #if EFI_TUNER_STUDIO
-	engine->outputChannels.vvtTargets[index] = target;
+	engine->outputChannels.vvtTargets[index] = static_cast<int8_t>(target);
 #endif
 
 	// If the target is very near the rest position, disable control entirely
@@ -149,11 +149,11 @@ expected<percent_t> VvtController::getClosedLoop(angle_t target, angle_t observa
 		vvtDistance = distance;
 		float oilPressure = Sensor::getOrZero(SensorType::OilPressure);
 		float feedforward = m_cam == 0
-			? interpolate2d(oilPressure, engineConfiguration->vvtAdvOilPressureBinsIntake, engineConfiguration->vvtAdvDutyIntake)
-			: interpolate2d(oilPressure, engineConfiguration->vvtAdvOilPressureBinsExhaust, engineConfiguration->vvtAdvDutyExhaust);
+			? interpolate2d(oilPressure, config->vvtAdvOilPressureBinsIntake, config->vvtAdvDutyIntake)
+			: interpolate2d(oilPressure, config->vvtAdvOilPressureBinsExhaust, config->vvtAdvDutyExhaust);
 		float pFactor = m_cam == 0
-			? interpolate2d(distance, engineConfiguration->vvtAdvDistanceBinsIntake, engineConfiguration->vvtAdvPFactorIntake)
-			: interpolate2d(distance, engineConfiguration->vvtAdvDistanceBinsExhaust, engineConfiguration->vvtAdvPFactorExhaust);
+			? interpolate2d(distance, config->vvtAdvDistanceBinsIntake, config->vvtAdvPFactorIntake)
+			: interpolate2d(distance, config->vvtAdvDistanceBinsExhaust, config->vvtAdvPFactorExhaust);
 		float dTime = MS2SEC(GET_PERIOD_LIMITED(&engineConfiguration->auxPid[m_cam]));
 		float trim = m_pid.getUnclampedOutputWithPFactor(target, observation, dTime, pFactor) - m_pid.getOffset();
 		float output = clampF(engineConfiguration->auxPid[m_cam].minValue, feedforward + trim,
@@ -232,7 +232,7 @@ static void turnVvtPidOn(int index) {
 			&engine->scheduler,
 			engineConfiguration->vvtPins[index],
 			getVvtOutputPin(index),
-			engineConfiguration->vvtOutputFrequency, 0.1,
+			engineConfiguration->vvtOutputFrequency, 0.1f,
 			applyVvtPinState);
 }
 

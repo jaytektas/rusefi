@@ -27,6 +27,7 @@ TESTS_SRC_CPP = \
 	tests/trigger/test_trigger_scheduler.cpp \
 	tests/trigger/test_trigger_noiseless.cpp \
 	tests/trigger/test_trigger_input_adc.cpp \
+	tests/trigger/test_trigger_rpm_startup.cpp \
 	tests/trigger/test_miata_na_tdc.cpp \
 	tests/trigger/test_cam_vvt_input.cpp \
 	tests/trigger/test_2jz_vvt.cpp \
@@ -55,6 +56,7 @@ TESTS_SRC_CPP = \
 	tests/trigger/test_gm_lt1_optispark.cpp \
 	tests/trigger/test_nissan_vk56.cpp \
 	tests/trigger/test_suzuki_36_2_2.cpp \
+	tests/trigger/test_real_suzuki_k6a.cpp \
 	tests/trigger/test_real_nissan_hr.cpp \
 	tests/trigger/test_real_nissan_hr_vvt.cpp \
 	tests/trigger/test_real_k24a2.cpp \
@@ -161,6 +163,7 @@ TESTS_SRC_CPP = \
 	tests/test_ion.cpp \
 	tests/test_kline_bytes_aggregator.cpp \
 	tests/test_engine_math.cpp \
+	tests/test_engine_sniffer.cpp \
 	tests/test_throttle_model.cpp \
 	tests/test_fasterEngineSpinningUp.cpp \
 	tests/test_dwell_corner_case_issue_796.cpp \
@@ -176,6 +179,7 @@ TESTS_SRC_CPP = \
 	tests/test_bluetooth.cpp \
 	tests/test_pwm_generator.cpp \
 	tests/test_log_buffer.cpp \
+	tests/test_logging_central.cpp \
 	tests/test_event_queue.cpp \
 	tests/test_scheduling_pool.cpp \
 	tests/test_cpp_memory_layout.cpp \
@@ -206,8 +210,10 @@ TESTS_SRC_CPP = \
 	tests/sensor/test_sensor_init.cpp \
 	tests/sensor/test_tps_smoothing.cpp \
 	tests/sensor/test_baro_from_map.cpp \
+	tests/sensor/test_lps25.cpp \
 	tests/sensor/table_func.cpp \
 	tests/sensor/test_fuel_level_func.cpp \
+	tests/sensor/test_sensor_checker.cpp \
 	tests/test_stft.cpp \
 	tests/test_hpfp.cpp \
 	tests/test_hpfp_integrated.cpp \

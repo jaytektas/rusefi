@@ -33,15 +33,26 @@ public class StatusPanelWithProgressBar implements UpdateOperationCallbacks {
         this.prepareFirmwareHandoff = Objects.requireNonNull(prepareFirmwareHandoff);
         progressBar.setIndeterminate(false);
         progressBar.setStringPainted(true);
-        progressBar.setBorder(BorderFactory.createLineBorder(Color.RED));
+        // themed bar with a little room around it, no debug-red outline [tag:console_theme]
+        progressBar.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.add(statusPanelFirmwareTab);
         content.add(progressBar);
     }
 
+    /** The log text, e.g. for {@link com.rusefi.ui.widgets.TextZoom}. */
+    public JComponent getLogTextArea() {
+        return statusPanelFirmwareTab.getLogTextArea();
+    }
+
     public JPanel getContent() {
         return content;
+    }
+
+    /** Copies the status log, e.g. for a support request. */
+    public void copyLogToClipboard() {
+        statusPanelFirmwareTab.copyLogToClipboard();
     }
 
     @Override

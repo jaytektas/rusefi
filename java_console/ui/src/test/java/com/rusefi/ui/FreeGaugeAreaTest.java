@@ -22,31 +22,39 @@ class FreeGaugeAreaTest {
     void editLayoutOverlayTakesInputAndTheToolbarFollows() throws Exception {
         Node config = twoColumnGrid();
         onPanel(config, panel -> {
-            assertFalse(panel.getEditLayoutButton().isVisible(), "Editing is a free-layout feature");
-            assertFalse(panel.getAddGaugeButton().isVisible());
+            assertFalse(panel.getEditLayoutItem().isEnabled(), "Editing is a free-layout feature");
+            assertFalse(panel.getAddGaugeItem().isEnabled());
+            assertFalse(panel.getDoneEditingButton().isVisible());
             panel.setFreeMode(true);
-            assertTrue(panel.getEditLayoutButton().isVisible());
-            assertTrue(panel.getAddGaugeButton().isVisible());
+            assertTrue(panel.getEditLayoutItem().isEnabled());
+            assertTrue(panel.getAddGaugeItem().isEnabled());
+            assertFalse(panel.getDoneEditingButton().isVisible(), "Done only appears while arranging");
 
-            panel.getEditLayoutButton().doClick(0);
+            panel.getEditLayoutItem().doClick(0);
             FreeGaugeArea area = panel.getFreeArea();
             JPanel free = panel.getFreePanel();
             layout(free);
             assertTrue(area.isEditing());
-            assertEquals(GaugesPanel.DONE_EDITING, panel.getEditLayoutButton().getText());
+            assertTrue(panel.getDoneEditingButton().isVisible());
+            assertFalse(panel.getEditLayoutItem().isEnabled(), "Already arranging");
             assertSame(area.getEditor(), SwingUtilities.getDeepestComponentAt(free, 100, 100),
                 "Gauges cannot be clicked while editing");
 
             key(area.getEditor(), KeyEvent.VK_ESCAPE, 0);
             assertFalse(area.isEditing(), "Esc finishes editing");
-            assertFalse(panel.getEditLayoutButton().isSelected());
-            assertEquals(GaugesPanel.EDIT_LAYOUT, panel.getEditLayoutButton().getText());
+            assertFalse(panel.getDoneEditingButton().isVisible());
+            assertTrue(panel.getEditLayoutItem().isEnabled());
             assertNotSame(area.getEditor(), SwingUtilities.getDeepestComponentAt(free, 100, 100));
 
-            panel.getEditLayoutButton().doClick(0);
+            panel.getEditLayoutItem().doClick(0);
+            panel.getDoneEditingButton().doClick(0);
+            assertFalse(area.isEditing(), "Done finishes editing");
+
+            panel.getEditLayoutItem().doClick(0);
             panel.setFreeMode(false);
             assertFalse(area.isEditing(), "Leaving Free mode ends editing");
-            assertFalse(panel.getEditLayoutButton().isVisible());
+            assertFalse(panel.getEditLayoutItem().isEnabled());
+            assertFalse(panel.getDoneEditingButton().isVisible());
         });
     }
 
@@ -90,6 +98,129 @@ class FreeGaugeAreaTest {
             mouse(editor, MouseEvent.MOUSE_PRESSED, 5, 195);
             assertNull(area.getSelected(), "Clicking empty space clears the selection");
         });
+    }
+
+    @Test
+    void undoRedoAndResetWhileArranging() throws Exception {
+        Node config = twoColumnGrid();
+        onPanel(config, panel -> {
+            assertFalse(panel.getUndoButton().isVisible(), "Undo only appears while arranging");
+            FreeGaugeArea area = startEditing(panel);
+            FreeGaugeArea.Editor editor = area.getEditor();
+            assertTrue(panel.getUndoButton().isVisible());
+            assertTrue(panel.getResetArrangeButton().isVisible());
+            assertFalse(panel.getUndoButton().isEnabled(), "Nothing to undo yet");
+            assertFalse(panel.getRedoButton().isEnabled());
+
+            // A press without movement is not a change.
+            mouse(editor, MouseEvent.MOUSE_PRESSED, 100, 100);
+            mouse(editor, MouseEvent.MOUSE_RELEASED, 100, 100);
+            assertFalse(area.canUndo());
+
+            // A whole drag is a single step.
+            mouse(editor, MouseEvent.MOUSE_PRESSED, 100, 100);
+            mouse(editor, MouseEvent.MOUSE_DRAGGED, 120, 100);
+            mouse(editor, MouseEvent.MOUSE_DRAGGED, 140, 100);
+            mouse(editor, MouseEvent.MOUSE_RELEASED, 140, 100);
+            assertBounds(0.10, 0, 0.5, 1, GaugeLayout.getBounds(config.getChild("free_0")), "dragged");
+            assertTrue(panel.getUndoButton().isEnabled());
+            key(editor, KeyEvent.VK_DELETE, 0);
+            assertEquals(1, config.getIntProperty("free_count", 0));
+
+            panel.getUndoButton().doClick(0);
+            assertEquals(2, config.getIntProperty("free_count", 0), "Undo brings the removed gauge back");
+            assertEquals(2, area.getGaugeCount());
+            assertEquals("CustomGauge", config.getChild("free_0").getProperty("gauge"));
+            assertBounds(0.10, 0, 0.5, 1, GaugeLayout.getBounds(config.getChild("free_0")), "after undoing removal");
+            key(editor, KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK);
+            assertBounds(0, 0, 0.5, 1, GaugeLayout.getBounds(config.getChild("free_0")), "Ctrl+Z undoes the drag");
+            assertFalse(panel.getUndoButton().isEnabled());
+            assertTrue(panel.getRedoButton().isEnabled());
+
+            key(editor, KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK);
+            assertBounds(0.10, 0, 0.5, 1, GaugeLayout.getBounds(config.getChild("free_0")), "Ctrl+Y redoes");
+            panel.getRedoButton().doClick(0);
+            assertEquals(1, config.getIntProperty("free_count", 0), "Redo removes the gauge again");
+            assertFalse(panel.getRedoButton().isEnabled());
+
+            panel.getResetArrangeButton().doClick(0);
+            assertEquals(2, config.getIntProperty("free_count", 0), "Reset returns to the grid");
+            assertBounds(0, 0, 0.5, 1, GaugeLayout.getBounds(config.getChild("free_0")), "after reset");
+            assertTrue(area.isEditing(), "Reset keeps arranging");
+            key(editor, KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK);
+            assertEquals(1, config.getIntProperty("free_count", 0), "Reset can be undone");
+
+            // A new change discards the redo history.
+            key(editor, KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK);
+            assertTrue(area.canRedo());
+            area.addGauge("RPMGauge");
+            assertFalse(area.canRedo());
+
+            panel.getDoneEditingButton().doClick(0);
+            panel.getEditLayoutItem().doClick(0);
+            assertFalse(panel.getUndoButton().isEnabled(), "Each arranging session starts a new history");
+        });
+    }
+
+    @Test
+    void theGaugeBelowIsReachableOutsideTheDialAbove() throws Exception {
+        Node config = twoColumnGrid();
+        config.setProperty("gauges_mode", "free");
+        config.setProperty("free_count", 2);
+        config.getChild("free_0").setProperty("gauge", "CustomGauge");
+        GaugeLayout.setBounds(config.getChild("free_0"), new Rectangle2D.Double(0, 0, 0.5, 1));
+        config.getChild("free_1").setProperty("gauge", "RPMGauge");
+        // On top, covering the lower gauge's gear corner with its own transparent corner.
+        GaugeLayout.setBounds(config.getChild("free_1"), new Rectangle2D.Double(0.4, 0, 0.5, 0.5));
+        onPanel(config, panel -> {
+            JPanel free = panel.getFreePanel();
+            layout(free);
+            // The gear's place comes from the nested layouts too; validate() needs a window.
+            layoutTree(free);
+            FreeGaugeArea area = panel.getFreeArea();
+            Component lower = area.getItem(0).element.getContent();
+            Component upper = area.getItem(1).element.getContent();
+            Component lowerGear = gear(lower);
+            Point gearSpot = SwingUtilities.convertPoint(lowerGear.getParent(),
+                lowerGear.getX() + lowerGear.getWidth() / 2, lowerGear.getY() + lowerGear.getHeight() / 2, free);
+            assertTrue(upper.getBounds().contains(gearSpot),
+                "the fixture overlaps the gear: " + gearSpot + " " + upper.getBounds());
+
+            assertTrue(SwingUtilities.isDescendingFrom(
+                    SwingUtilities.getDeepestComponentAt(free, gearSpot.x, gearSpot.y), lower),
+                "Outside its dial the upper gauge lets the mouse through to the gear below");
+            assertTrue(SwingUtilities.isDescendingFrom(SwingUtilities.getDeepestComponentAt(free, 260, 50), upper),
+                "The upper dial still takes the mouse");
+
+            gear(upper).setVisible(true);
+            assertTrue(SwingUtilities.isDescendingFrom(
+                    SwingUtilities.getDeepestComponentAt(free, gearSpot.x, gearSpot.y), upper),
+                "While hovered, a gauge keeps its whole box so the pointer can reach its own gear");
+        });
+    }
+
+    private static void layoutTree(Container container) {
+        container.doLayout();
+        for (Component child : container.getComponents()) {
+            if (child instanceof Container) {
+                layoutTree((Container) child);
+            }
+        }
+    }
+
+    private static Component gear(Component root) {
+        if (root instanceof com.rusefi.ui.widgets.GaugeOptionsButton) {
+            return root;
+        }
+        if (root instanceof Container) {
+            for (Component child : ((Container) root).getComponents()) {
+                Component found = gear(child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     @Test
@@ -187,7 +318,7 @@ class FreeGaugeAreaTest {
 
     private static FreeGaugeArea startEditing(GaugesPanel panel) {
         panel.setFreeMode(true);
-        panel.getEditLayoutButton().doClick(0);
+        panel.getEditLayoutItem().doClick(0);
         layout(panel.getFreePanel());
         return panel.getFreeArea();
     }

@@ -21,7 +21,9 @@ import com.rusefi.ui.util.UiUtils;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -30,7 +32,8 @@ import static com.devexperts.logging.Logging.getLogging;
 /**
  * Round gauge
  * <p>
- * Double-click, or "Pop out to window" in the right-click menu, creates a {@link DetachedSensor}
+ * Right-click changes the gauge; the gear shown on hover holds its display options.
+ * Double-click, or "Pop out to window" on the gear, creates a {@link DetachedSensor}
  * <p>
  * Date: 7/9/14
  * Andrey Belomutskiy, (c) 2013-2020
@@ -41,10 +44,9 @@ import static com.devexperts.logging.Logging.getLogging;
 public class SensorGauge {
     private static final Logging log = getLogging(SensorGauge.class);
 
-    public static final String CHANGE_GAUGE = "Change gauge";
     static final String POP_OUT = "Pop out to window";
-    private static final String HINT_LINE_1 = "Double-click to detach";
-    private static final String HINT_LINE_2 = "Right-click for options";
+    private static final String HINT_LINE_1 = "Right-click to change gauge, double-click to detach";
+    private static final String HINT_LINE_2 = "Display options: gear (top right) or right-click > Gauge options";
 
     public interface GaugeChangeListener {
         /**
@@ -58,18 +60,24 @@ public class SensorGauge {
 
     public static void createGaugeBody(UIContext uiContext, final String gaugeName, final JPanelWithListener wrapper, final GaugeChangeListener listener,
                                        final JMenuItem extraMenuItem) {
-        createGaugeBody(uiContext, gaugeName, wrapper, listener, extraMenuItem, GaugeDisplayKind.ROUND);
+        createGaugeBody(uiContext, gaugeName, wrapper, listener, menuItems(extraMenuItem), GaugeDisplayKind.ROUND,
+            GaugeScaleOverrides.NONE);
     }
 
-    /** @param kind round, text or bar; live graphs are built by their own class */
+    /**
+     * @param extraMenuItems added to the gear menu before "Pop out to window"
+     * @param kind round, text or bar; live graphs are built by their own class
+     * @param overrides the user's replacements for the .ini range, danger value and decimals
+     */
     public static void createGaugeBody(UIContext uiContext, final String gaugeName, final JPanelWithListener wrapper, final GaugeChangeListener listener,
-                                       final JMenuItem extraMenuItem, GaugeDisplayKind kind) {
+                                       final List<JMenuItem> extraMenuItems, GaugeDisplayKind kind,
+                                       GaugeScaleOverrides overrides) {
 
         IniFileModel iniFile = uiContext.iniFileState.getIniFileModel();
         if (iniFile != null) {
             GaugeModel gaugeModel = iniFile.getGauge(gaugeName);
             if (gaugeModel != null) {
-                createGauge(uiContext, gaugeName, wrapper, listener, extraMenuItem, gaugeModel, kind);
+                createGauge(uiContext, gaugeName, wrapper, listener, extraMenuItems, gaugeModel, kind, overrides);
             } else {
                 log.warn("Gauge not found: " + gaugeName);
             }
@@ -80,11 +88,10 @@ public class SensorGauge {
         }
     }
 
-    static void createGauge(UIContext uiContext, String gaugeName, JPanelWithListener wrapper, GaugeChangeListener listener, JMenuItem extraMenuItem,
-                            GaugeModel gaugeModel, GaugeDisplayKind kind) {
-        BinaryProtocol protocol = uiContext.getBinaryProtocol();
-        final JComponent component = createDisplay(kind, gaugeModel, uiContext.iniFileState.getIniFileModel(),
-            protocol == null ? null : protocol.getControllerConfiguration());
+    static void createGauge(UIContext uiContext, String gaugeName, JPanelWithListener wrapper, GaugeChangeListener listener,
+                            List<JMenuItem> extraMenuItems, GaugeModel gaugeModel, GaugeDisplayKind kind,
+                            GaugeScaleOverrides overrides) {
+        final JComponent component = createDisplay(kind, gaugeModel, iniScale(uiContext, gaugeModel).with(overrides));
         final GaugeDisplay gauge = (GaugeDisplay) component;
         UiUtils.setToolTip(component, HINT_LINE_1, HINT_LINE_2);
         UiUtils.setToolTip(wrapper, HINT_LINE_1, HINT_LINE_2);
@@ -122,6 +129,8 @@ public class SensorGauge {
         }
 
         gauge.setValue(SensorCentral.getInstance().getValue(channelName));
+        GaugeOptionsButton.install(component, () -> createOptionsMenu(extraMenuItems,
+            () -> popOut(uiContext, popOutLocation(component), gaugeName)));
         MouseListener mouseListener = new MouseAdapter() {
             // The menu follows the platform popup trigger (press on macOS/Linux, release on
             // Windows). mouseClicked is lost whenever the mouse moves a pixel between press
@@ -138,15 +147,15 @@ public class SensorGauge {
 
             private void showMenuOnPopupTrigger(MouseEvent e) {
                 if (e.isPopupTrigger()) {
-                    GaugePopups.show(createPopupMenu(uiContext, wrapper, listener, extraMenuItem,
-                        () -> popOut(uiContext, e, gaugeName), kind), e);
+                    GaugePopups.show(createPopupMenu(uiContext, wrapper, listener, extraMenuItems, kind,
+                        () -> popOut(uiContext, popOutLocation(component), gaugeName)), e);
                 }
             }
 
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (!SwingUtilities.isRightMouseButton(e) && e.getClickCount() == 2) {
-                    popOut(uiContext, e, gaugeName);
+                    popOut(uiContext, e.getLocationOnScreen(), gaugeName);
                 }
             }
         };
@@ -166,41 +175,65 @@ public class SensorGauge {
     }
 
     /**
-     * Search, then "Change gauge", the caller's display options, and "Pop out to window".
+     * Right-click menu: search, then the gauge groups, so a gauge is one step away. Display
+     * settings are on the gear, see {@link #createOptionsMenu}.
      * Package-private so tests inspect the same menu users see.
      */
     static JPopupMenu createPopupMenu(UIContext uiContext, JPanelWithListener wrapper, GaugeChangeListener listener,
-                                      JMenuItem extraMenuItem, Runnable popOut) {
-        return createPopupMenu(uiContext, wrapper, listener, extraMenuItem, popOut, GaugeDisplayKind.ROUND);
+                                      JMenuItem extraMenuItem) {
+        return createPopupMenu(uiContext, wrapper, listener, menuItems(extraMenuItem), GaugeDisplayKind.ROUND);
     }
 
     static JPopupMenu createPopupMenu(UIContext uiContext, JPanelWithListener wrapper, GaugeChangeListener listener,
-                                      JMenuItem extraMenuItem, Runnable popOut, GaugeDisplayKind kind) {
+                                      List<JMenuItem> extraMenuItems, GaugeDisplayKind kind) {
+        return createPopupMenu(uiContext, wrapper, listener, extraMenuItems, kind, null);
+    }
+
+    /**
+     * @param popOut when set, the menu starts with "Gauge options", the gear's menu as a submenu:
+     *               the gear can be hidden under another free-layout gauge, a right-click never is.
+     */
+    static JPopupMenu createPopupMenu(UIContext uiContext, JPanelWithListener wrapper, GaugeChangeListener listener,
+                                      List<JMenuItem> extraMenuItems, GaugeDisplayKind kind, Runnable popOut) {
         JPopupMenu pm = new JPopupMenu();
-        JMenu changeGauge = new JMenu(CHANGE_GAUGE);
-        fillGaugeMenuItems(uiContext, changeGauge, wrapper, listener, extraMenuItem, kind);
-        pm.add(changeGauge);
-        if (extraMenuItem != null) {
-            pm.add(extraMenuItem);
+        fillGaugeMenuItems(uiContext, pm, wrapper, listener, extraMenuItems, kind);
+        GaugeMenuSearch.addTo(pm);
+        if (popOut != null) {
+            JMenu options = new JMenu(GaugeOptionsButton.TOOLTIP);
+            options.setIcon(new GaugeOptionsButton.GearIcon());
+            for (Component item : createOptionsMenu(extraMenuItems, popOut).getComponents()) {
+                options.getPopupMenu().add(item);
+            }
+            pm.insert(options, 0);
+            pm.insert(new JPopupMenu.Separator(), 1);
         }
-        pm.addSeparator();
+        return pm;
+    }
+
+    /** Gear menu: the caller's display options, then "Pop out to window". */
+    static JPopupMenu createOptionsMenu(List<JMenuItem> extraMenuItems, Runnable popOut) {
+        JPopupMenu pm = new JPopupMenu();
+        for (JMenuItem item : extraMenuItems) {
+            pm.add(item);
+        }
+        if (!extraMenuItems.isEmpty()) {
+            pm.addSeparator();
+        }
         JMenuItem popOutItem = new JMenuItem(POP_OUT);
         popOutItem.setToolTipText("Open this gauge in its own always-on-top window (also: double-click)");
         popOutItem.addActionListener(e -> popOut.run());
         pm.add(popOutItem);
-        GaugeMenuSearch.addTo(pm, changeGauge);
         return pm;
     }
 
-    static void fillGaugeMenuItems(UIContext uiContext, JComponent popupMenu, final JPanelWithListener wrapper, final GaugeChangeListener listener, final JMenuItem extraMenuItem) {
-        fillGaugeMenuItems(uiContext, popupMenu, wrapper, listener, extraMenuItem, GaugeDisplayKind.ROUND);
-    }
-
-    /** Changing the gauge keeps its presentation. */
+    /**
+     * Changing the gauge keeps its presentation but not the scale settings, which were chosen
+     * for the previous channel.
+     */
     static void fillGaugeMenuItems(UIContext uiContext, JComponent popupMenu, final JPanelWithListener wrapper,
-                                   final GaugeChangeListener listener, final JMenuItem extraMenuItem, GaugeDisplayKind kind) {
+                                   final GaugeChangeListener listener, final List<JMenuItem> extraMenuItems, GaugeDisplayKind kind) {
         addGaugeCatalog(uiContext, popupMenu, gaugeName -> {
-            createGaugeBody(uiContext, gaugeName, wrapper, listener, extraMenuItem, kind);
+            createGaugeBody(uiContext, gaugeName, wrapper, listener, extraMenuItems, kind, GaugeScaleOverrides.NONE);
             listener.onSensorChange(gaugeName);
         });
     }
@@ -233,21 +266,36 @@ public class SensorGauge {
         }
     }
 
-    static JComponent createDisplay(GaugeDisplayKind kind, GaugeModel model, IniFileModel ini, ConfigurationImage configuration) {
+    static JComponent createDisplay(GaugeDisplayKind kind, GaugeModel model, GaugeScale scale) {
         switch (kind) {
             case TEXT:
-                return new DigitalGauge(model, ini, configuration);
+                return new DigitalGauge(scale, model);
             case HORIZONTAL_BAR:
-                return new BarGauge(model, ini, configuration, false);
+                return new BarGauge(scale, model, false);
             case VERTICAL_BAR:
-                return new BarGauge(model, ini, configuration, true);
+                return new BarGauge(scale, model, true);
             default:
-                return new CircularGauge(model, ini, configuration);
+                return new CircularGauge(scale, model);
         }
     }
 
-    private static void popOut(UIContext uiContext, MouseEvent e, String gaugeName) {
-        new DetachedSensor(uiContext, gaugeName, DetachedSensor.DEFAULT_WIDTH).show(e);
+    /** The scale {@code model} defines, with .ini expressions evaluated against the connected ECU's tune. */
+    public static GaugeScale iniScale(UIContext uiContext, GaugeModel model) {
+        BinaryProtocol protocol = uiContext.getBinaryProtocol();
+        ConfigurationImage configuration = protocol == null ? null : protocol.getControllerConfiguration();
+        return GaugeScale.fromIni(model, uiContext.iniFileState.getIniFileModel(), configuration);
+    }
+
+    private static List<JMenuItem> menuItems(JMenuItem item) {
+        return item == null ? Collections.emptyList() : Collections.singletonList(item);
+    }
+
+    private static Point popOutLocation(JComponent gauge) {
+        return gauge.isShowing() ? gauge.getLocationOnScreen() : new Point();
+    }
+
+    private static void popOut(UIContext uiContext, Point screenLocation, String gaugeName) {
+        new DetachedSensor(uiContext, gaugeName, DetachedSensor.DEFAULT_WIDTH).show(screenLocation);
     }
 
 }

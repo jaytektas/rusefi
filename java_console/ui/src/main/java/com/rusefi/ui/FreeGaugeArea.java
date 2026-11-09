@@ -1,6 +1,7 @@
 package com.rusefi.ui;
 
 import com.rusefi.core.preferences.storage.Node;
+import com.rusefi.ui.widgets.GaugeStyle;
 
 import javax.swing.*;
 import java.awt.*;
@@ -10,7 +11,10 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Rectangle2D;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -21,6 +25,8 @@ import java.util.List;
  * drag to move, drag the corner handle to resize, click the cross to remove. Gauges never
  * see those clicks, so editing cannot change a gauge by accident. The overlay lives inside
  * the gauge area rather than on the frame's glass pane, which other console code owns.
+ * <p>
+ * Each arranging session keeps an undo history of whole free-layout snapshots; a drag is one step.
  */
 final class FreeGaugeArea {
     /** Edits snap to this fraction of the gauge area. */
@@ -31,10 +37,7 @@ final class FreeGaugeArea {
     static final double NEW_GAUGE_WIDTH = 0.25;
     static final int HANDLE = 14;
     static final int CLOSE = 20;
-    private static final Color ACCENT = new Color(0x1E88E5);
-    private static final Color OUTLINE = new Color(30, 136, 229, 140);
-    private static final Color CLOSE_FILL = new Color(0xE53935);
-    private static final Color GRID_LINE = new Color(0, 0, 0, 18);
+    static final int MAX_HISTORY = 100;
 
     private final UIContext uiContext;
     private final Node config;
@@ -48,23 +51,34 @@ final class FreeGaugeArea {
     };
     private final Editor editor = new Editor();
     private final List<Item> items = new ArrayList<>();
-    private final Runnable editingChanged;
+    private final Deque<Node> undoHistory = new ArrayDeque<>();
+    private final Deque<Node> redoHistory = new ArrayDeque<>();
+    /** Called when editing starts or ends and when undo or redo becomes available. */
+    private final Runnable stateChanged;
+    private List<String> defaultGauges = Collections.emptyList();
     private boolean active;
     private boolean editing;
     private Item selected;
 
-    FreeGaugeArea(UIContext uiContext, Node config, Runnable editingChanged) {
+    FreeGaugeArea(UIContext uiContext, Node config, Runnable stateChanged) {
         this.uiContext = uiContext;
         this.config = config;
-        this.editingChanged = editingChanged;
+        this.stateChanged = stateChanged;
     }
 
     JPanel getPanel() {
         return panel;
     }
 
-    /** Recreates the gauges from the configuration. */
+    /** Recreates the gauges from the configuration, which was replaced from outside: the history no longer applies. */
     void rebuild(List<String> defaultGauges) {
+        this.defaultGauges = defaultGauges;
+        undoHistory.clear();
+        redoHistory.clear();
+        reload();
+    }
+
+    private void reload() {
         destroy();
         if (editing) {
             panel.add(editor, new Rectangle2D.Double(0, 0, 1, 1), 0);
@@ -102,6 +116,8 @@ final class FreeGaugeArea {
         }
         this.editing = editing;
         selected = null;
+        undoHistory.clear();
+        redoHistory.clear();
         if (editing) {
             panel.add(editor, new Rectangle2D.Double(0, 0, 1, 1), 0);
             editor.requestFocusInWindow();
@@ -109,7 +125,54 @@ final class FreeGaugeArea {
             panel.remove(editor);
         }
         refresh();
-        editingChanged.run();
+        stateChanged.run();
+    }
+
+    boolean canUndo() {
+        return !undoHistory.isEmpty();
+    }
+
+    boolean canRedo() {
+        return !redoHistory.isEmpty();
+    }
+
+    void undo() {
+        step(undoHistory, redoHistory);
+    }
+
+    void redo() {
+        step(redoHistory, undoHistory);
+    }
+
+    /** Returns to a fresh copy of the grid, as an undoable step. */
+    void resetToGrid() {
+        recordUndo();
+        GaugeLayout.seedFreeFromGrid(config);
+        reload();
+    }
+
+    private void step(Deque<Node> from, Deque<Node> to) {
+        if (from.isEmpty()) {
+            return;
+        }
+        to.push(GaugeLayout.copyFreeLayout(config));
+        GaugeLayout.restoreFreeLayout(config, from.pop());
+        reload();
+        stateChanged.run();
+    }
+
+    /** Remembers the layout before a change. */
+    private void recordUndo() {
+        pushUndo(GaugeLayout.copyFreeLayout(config));
+    }
+
+    private void pushUndo(Node snapshot) {
+        undoHistory.push(snapshot);
+        if (undoHistory.size() > MAX_HISTORY) {
+            undoHistory.removeLast();
+        }
+        redoHistory.clear();
+        stateChanged.run();
     }
 
     int getGaugeCount() {
@@ -125,6 +188,7 @@ final class FreeGaugeArea {
         if (!canAddGauge()) {
             return;
         }
+        recordUndo();
         Node node = config.getChild(GaugeLayout.FREE_ELEMENT + items.size());
         node.getConfig().clear();
         node.setProperty("gauge", gaugeName);
@@ -139,6 +203,7 @@ final class FreeGaugeArea {
     }
 
     void removeGauge(Item item) {
+        recordUndo();
         item.element.destroy();
         panel.remove(item.element.getContent());
         items.remove(item);
@@ -150,6 +215,7 @@ final class FreeGaugeArea {
     }
 
     void bringToFront(Item item) {
+        recordUndo();
         items.remove(item);
         items.add(item);
         renumber();
@@ -158,6 +224,7 @@ final class FreeGaugeArea {
     }
 
     void sendToBack(Item item) {
+        recordUndo();
         items.remove(item);
         items.add(0, item);
         renumber();
@@ -186,6 +253,8 @@ final class FreeGaugeArea {
         element.setActive(active);
         // Transparent around the dial, so an overlapped gauge shows outside the circle.
         element.getContent().setOpaque(false);
+        // ...and the mouse reaches the gauge below there, so its gear stays reachable.
+        element.getContent().setMouseOnlyOnChildren(true);
         Item item = new Item(node, element);
         items.add(item);
         // Index 0 is painted last, so later gauges stay on top of earlier ones.
@@ -280,11 +349,13 @@ final class FreeGaugeArea {
         private Drag drag = Drag.NONE;
         private Point dragStart;
         private Rectangle2D.Double startBounds;
+        /** Layout before the current drag, kept as an undo step only if the drag changed it. */
+        private Node beforeDrag;
 
         Editor() {
             setOpaque(false);
             setFocusable(true);
-            setToolTipText("Drag to move, drag the corner to resize, right-click to arrange; Esc when done");
+            setToolTipText("Drag to move, drag the corner to resize, right-click to arrange; Ctrl+Z to undo, Esc when done");
             MouseAdapter mouse = new MouseAdapter() {
                 @Override
                 public void mousePressed(MouseEvent event) {
@@ -298,7 +369,7 @@ final class FreeGaugeArea {
 
                 @Override
                 public void mouseReleased(MouseEvent event) {
-                    drag = Drag.NONE;
+                    released();
                 }
 
                 @Override
@@ -384,6 +455,15 @@ final class FreeGaugeArea {
             drag = mode;
             dragStart = point;
             startBounds = boundsOf(selected);
+            beforeDrag = GaugeLayout.copyFreeLayout(config);
+        }
+
+        private void released() {
+            if (drag != Drag.NONE && selected != null && !boundsOf(selected).equals(startBounds)) {
+                pushUndo(beforeDrag);
+            }
+            drag = Drag.NONE;
+            beforeDrag = null;
         }
 
         void dragged(Point point) {
@@ -406,6 +486,17 @@ final class FreeGaugeArea {
         private void key(KeyEvent event) {
             if (event.getKeyCode() == KeyEvent.VK_ESCAPE) {
                 setEditing(false);
+                return;
+            }
+            if (event.isControlDown() || event.isMetaDown()) {
+                boolean redo = event.getKeyCode() == KeyEvent.VK_Y
+                    || event.getKeyCode() == KeyEvent.VK_Z && event.isShiftDown();
+                if (redo) {
+                    redo();
+                } else if (event.getKeyCode() == KeyEvent.VK_Z) {
+                    undo();
+                }
+                event.consume();
                 return;
             }
             if (selected == null) {
@@ -435,6 +526,9 @@ final class FreeGaugeArea {
             }
             b.x = clamp(snap(b.x), 0, 1 - b.width);
             b.y = clamp(snap(b.y), 0, 1 - b.height);
+            if (!b.equals(boundsOf(selected))) {
+                recordUndo();
+            }
             place(selected, b);
             event.consume();
         }
@@ -462,7 +556,7 @@ final class FreeGaugeArea {
             try {
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 // Faint 10% guides show that the area is being edited.
-                g.setColor(GRID_LINE);
+                g.setColor(GaugeStyle.editGrid());
                 for (int i = 1; i < 10; i++) {
                     int x = (int) Math.round(getWidth() * i / 10.0);
                     int y = (int) Math.round(getHeight() * i / 10.0);
@@ -470,24 +564,24 @@ final class FreeGaugeArea {
                     g.drawLine(0, y, getWidth(), y);
                 }
                 g.setStroke(new BasicStroke(1, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10, new float[]{4, 4}, 0));
-                g.setColor(OUTLINE);
+                g.setColor(GaugeStyle.editOutline());
                 for (Item item : items) {
                     Rectangle r = pixels(boundsOf(item));
                     g.drawRect(r.x, r.y, r.width - 1, r.height - 1);
                 }
                 if (selected != null) {
                     Rectangle r = pixels(boundsOf(selected));
-                    g.setColor(ACCENT);
+                    g.setColor(GaugeStyle.editAccent());
                     g.setStroke(new BasicStroke(2));
                     g.drawRect(r.x + 1, r.y + 1, r.width - 2, r.height - 2);
                     Rectangle handle = resizeHandle(selected);
                     g.fillRect(handle.x, handle.y, handle.width, handle.height);
-                    g.setColor(Color.WHITE);
+                    g.setColor(Color.WHITE); // [tag:fixed_color] glyph on the accent or red button
                     g.drawLine(handle.x + 4, handle.y + handle.height - 3, handle.x + handle.width - 3, handle.y + 4);
                     Rectangle close = closeButton(selected);
-                    g.setColor(CLOSE_FILL);
+                    g.setColor(GaugeStyle.editClose());
                     g.fill(new Ellipse2D.Double(close.x, close.y, close.width, close.height));
-                    g.setColor(Color.WHITE);
+                    g.setColor(Color.WHITE); // [tag:fixed_color] glyph on the accent or red button
                     g.drawLine(close.x + 6, close.y + 6, close.x + close.width - 6, close.y + close.height - 6);
                     g.drawLine(close.x + close.width - 6, close.y + 6, close.x + 6, close.y + close.height - 6);
                 }

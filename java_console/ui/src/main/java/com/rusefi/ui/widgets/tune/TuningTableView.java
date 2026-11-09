@@ -7,6 +7,7 @@ import com.opensr5.ini.TableModel;
 import com.opensr5.ini.field.ArrayIniField;
 import com.opensr5.ini.field.IniField;
 import com.rusefi.config.StringFormatter;
+import com.rusefi.core.preferences.storage.Node;
 import com.rusefi.maintenance.CalibrationsInfo;
 
 import javax.swing.*;
@@ -34,7 +35,9 @@ import java.util.function.BiConsumer;
 public class TuningTableView {
     private static final int TOOLBAR_GAP = 6;
     private static final double SMOOTHING_FACTOR = 0.25;
+    private static final int MIN_PREVIEW_HEIGHT = 240;
     private final boolean viewMode;
+    private final Node orientationConfig;
     private final JTable table = new JTable() {
         @Override
         public boolean isCellEditable(int row, int column) {
@@ -72,16 +75,28 @@ public class TuningTableView {
     private final JTextField xAxisEditor = new JTextField();
     private int xAxisEditingColumn = -1;
     private Runnable onEdit;
+    private Runnable onOrientationChange = () -> { };
     private String selectionInput = "";
     private boolean applyingSelectionInput;
+    private IniFileModel currentIni;
+    private String currentTableName;
+    private Node orientationNode;
+    private boolean flipAxes;
+    private boolean invertX;
+    private boolean invertY;
 
     public TuningTableView(String title) {
         this(title, false);
     }
 
     public TuningTableView(String title, boolean viewMode) {
+        this(title, viewMode, new Node());
+    }
+
+    public TuningTableView(String title, boolean viewMode, Node orientationConfig) {
         this.title = title;
         this.viewMode = viewMode;
+        this.orientationConfig = orientationConfig;
         table.setTableHeader(new JTableHeader(table.getColumnModel()) {
             @Override
             public void doLayout() {
@@ -90,7 +105,7 @@ public class TuningTableView {
             }
         });
         table.getTableHeader().setReorderingAllowed(false);
-        table.setSelectionBackground(Color.ORANGE);
+        table.setSelectionBackground(Color.ORANGE); // [tag:fixed_color] selected cells, with black text, in every theme
         table.setDefaultRenderer(Object.class, new GradientRenderer());
         table.setCellSelectionEnabled(true);
         table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
@@ -110,6 +125,26 @@ public class TuningTableView {
                 }
                 int column = table.getTableHeader().columnAtPoint(e.getPoint());
                 startXAxisEdit(column);
+            }
+        });
+        table.getTableHeader().addMouseListener(new MouseAdapter() {
+            private void showOrientationMenu(MouseEvent event) {
+                if (event.isPopupTrigger()) {
+                    JPopupMenu menu = orientationMenuFor(table.getTableHeader().columnAtPoint(event.getPoint()));
+                    if (menu != null) {
+                        menu.show(table.getTableHeader(), event.getX(), event.getY());
+                    }
+                }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent event) {
+                showOrientationMenu(event);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                showOrientationMenu(event);
             }
         });
         table.addMouseWheelListener(this::handleTableWheel);
@@ -254,10 +289,36 @@ public class TuningTableView {
         });
     }
 
+    JPopupMenu orientationMenuFor(int column) {
+        if (column != 0 || orientationNode == null) {
+            return null;
+        }
+        JPopupMenu menu = new JPopupMenu();
+        addOrientationOption(menu, "Flip X/Y axes", "flip_xy", flipAxes);
+        addOrientationOption(menu, "Invert X axis", "invert_x", invertX);
+        addOrientationOption(menu, "Invert Y axis", "invert_y", invertY);
+        return menu;
+    }
+
+    private void addOrientationOption(JPopupMenu menu, String label, String key, boolean selected) {
+        JCheckBoxMenuItem option = new JCheckBoxMenuItem(label, selected);
+        option.addActionListener(event -> {
+            if (!finishXAxisEdit(true) || (table.isEditing() && !table.getCellEditor().stopCellEditing())) {
+                option.setSelected(!option.isSelected());
+                return;
+            }
+            orientationNode.setBoolProperty(key, option.isSelected());
+            displayTable(currentIni, currentTableName, imageTarget, axisImageTarget);
+            onOrientationChange.run();
+        });
+        menu.add(option);
+    }
+
     private void updatePreviewVisibility() {
         // Keep the grid usable in small dialogs. Large tables can scroll above the preview.
+        Insets border = tableScrollPane.getInsets();
         int gridHeight = Math.min(320, table.getRowCount() * table.getRowHeight())
-            + table.getTableHeader().getPreferredSize().height;
+            + table.getTableHeader().getPreferredSize().height + border.top + border.bottom;
         int availableHeight = tableContainer.getHeight();
         JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, tableContainer);
         if (viewport != null) {
@@ -266,11 +327,13 @@ public class TuningTableView {
             Point top = SwingUtilities.convertPoint(tableContainer, 0, 0, viewport.getView());
             availableHeight = viewport.getExtentSize().height - Math.max(0, top.y);
         }
-        boolean visible = previewEligible && !full3D && tableContainer.getWidth() >= 320
-            && availableHeight >= gridHeight + 160;
+        // A scrollable dialog keeps a short preview and scrolls to it; elsewhere it hides when it
+        // does not fit below the table.
+        boolean fits = viewport != null || availableHeight >= gridHeight + MIN_PREVIEW_HEIGHT;
+        boolean visible = previewEligible && !full3D && tableContainer.getWidth() >= 320 && fits;
         boolean sizeChanged = false;
         if (visible) {
-            int previewHeight = availableHeight - gridHeight;
+            int previewHeight = Math.max(MIN_PREVIEW_HEIGHT, availableHeight - gridHeight);
             if (mini3DView.getPreferredSize().height != previewHeight
                 || tableScrollPane.getPreferredSize().height != gridHeight) {
                 mini3DView.setPreferredSize(new Dimension(320, previewHeight));
@@ -317,6 +380,41 @@ public class TuningTableView {
     private void repaintAxes() {
         table.repaint();
         table.getTableHeader().repaint();
+        updateSurfaceSelection();
+    }
+
+    /** Shows the grid's selected cells on both 3D views; table rows are shown top-down. */
+    private void updateSurfaceSelection() {
+        if (!(table.getModel() instanceof TuningTableModel)) {
+            return;
+        }
+        Double[][] data = ((TuningTableModel) table.getModel()).data;
+        boolean[][] selection = null;
+        for (int row : table.getSelectedRows()) {
+            for (int column : table.getSelectedColumns()) {
+                if (column > 0 && row < data.length && column - 1 < data[0].length
+                    && table.isCellSelected(row, column)) {
+                    if (selection == null) {
+                        selection = new boolean[data.length][data[0].length];
+                    }
+                    selection[data.length - 1 - row][column - 1] = true;
+                }
+            }
+        }
+        surface3DView.setSelection(selection);
+        mini3DView.setSelection(selection);
+    }
+
+    /** INI axis labels and units can be expressions; only plain text is shown. */
+    private static String plainLabel(String label) {
+        if (label == null) {
+            return null;
+        }
+        String text = label.trim();
+        if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        return text.isEmpty() || text.contains("{") || text.contains("@") ? null : text;
     }
 
     private int activeRow() {
@@ -623,7 +721,7 @@ public class TuningTableView {
             }
         } catch (NumberFormatException ignored) {
         }
-        field.setBorder(BorderFactory.createLineBorder(Color.RED));
+        field.setBorder(BorderFactory.createLineBorder(TuningStyle.color("Console.ErrorText.foreground", Color.RED)));
         field.setToolTipText("Enter a finite number, or press Esc to cancel");
         return false;
     }
@@ -864,6 +962,10 @@ public class TuningTableView {
         this.onEdit = onEdit;
     }
 
+    public void setOnOrientationChange(Runnable onOrientationChange) {
+        this.onOrientationChange = onOrientationChange;
+    }
+
     private ArrayIniField editableAxisField(IniFileModel ini, String name) {
         Optional<IniField> field = ini.findIniField(name);
         if (field.isPresent() && field.get() instanceof ArrayIniField) {
@@ -895,8 +997,9 @@ public class TuningTableView {
         if (!Double.isFinite(number)) {
             return;
         }
-        int row = field.getRows() == 1 ? 0 : index;
-        int column = field.getRows() == 1 ? index : 0;
+        int storedIndex = (xAxis ? invertX : invertY) ? bins.length - 1 - index : index;
+        int row = field.getRows() == 1 ? 0 : storedIndex;
+        int column = field.getRows() == 1 ? storedIndex : 0;
         // Encode only the edited element, then display the actual stored precision.
         int offset = field.getOffset(row, column);
         ConfigurationImage candidate = axisImageTarget.clone();
@@ -925,8 +1028,8 @@ public class TuningTableView {
         if (imageTarget == null || zBinsField == null) {
             return false;
         }
-        ConfigurationImageGetterSetter.setArrayValues(zBinsField, imageTarget, model.data);
-        Double[][] encodedValues = ConfigurationImageGetterSetter.getArrayValues(zBinsField, imageTarget);
+        ConfigurationImageGetterSetter.setArrayValues(zBinsField, imageTarget, toStoredData(model.data));
+        Double[][] encodedValues = orientData(ConfigurationImageGetterSetter.getArrayValues(zBinsField, imageTarget));
         for (int row = 0; row < model.data.length; row++) {
             System.arraycopy(encodedValues[row], 0, model.data[row], 0, model.data[row].length);
         }
@@ -1206,34 +1309,94 @@ public class TuningTableView {
         int precision = IniField.parseDigits(ltft.getDigits());
 
         // Extract data from outputs buffer using the field's offset
-        Double[][] dataValues = ConfigurationImageGetterSetter.getArrayValues(ltft, zImage);
+        Double[][] storedValues = ConfigurationImageGetterSetter.getArrayValues(ltft, zImage);
 
         // X and Y bins (RPM and load) are on page 1
-        Double[] xBins = extractAxisBins(iniFile, iniTable.getXBinsConstant(), axisImage);
-        Double[] yBins = extractAxisBins(iniFile, iniTable.getYBinsConstant(), axisImage);
+        Double[] storedX = extractAxisBins(iniFile, iniTable.getXBinsConstant(), axisImage);
+        Double[] storedY = extractAxisBins(iniFile, iniTable.getYBinsConstant(), axisImage);
+
+        currentIni = iniFile;
+        currentTableName = tableName;
+        orientationNode = orientationConfig.getChild(tableName);
+        flipAxes = orientationNode.getBoolProperty("flip_xy");
+        invertX = orientationNode.getBoolProperty("invert_x");
+        invertY = orientationNode.getBoolProperty("invert_y");
+        Double[][] dataValues = orientData(storedValues);
+        Double[] xBins = orientAxis(flipAxes ? storedY : storedX, invertX);
+        Double[] yBins = orientAxis(flipAxes ? storedX : storedY, invertY);
 
         calculateMinMax(dataValues);
 
         this.imageTarget = zImage;
         this.zBinsField = ltft;
         this.axisImageTarget = axisImage;
-        this.xBinsField = editableAxisField(iniFile, iniTable.getXBinsConstant());
-        this.yBinsField = editableAxisField(iniFile, iniTable.getYBinsConstant());
+        this.xBinsField = editableAxisField(iniFile,
+            flipAxes ? iniTable.getYBinsConstant() : iniTable.getXBinsConstant());
+        this.yBinsField = editableAxisField(iniFile,
+            flipAxes ? iniTable.getXBinsConstant() : iniTable.getYBinsConstant());
 
         TuningTableModel model = new TuningTableModel(dataValues, xBins, yBins, precision, !viewMode,
-            edited -> commitEdit(edited, table.getSelectedRows(), table.getSelectedColumns()));
+            edited -> commitEdit(edited, table.getSelectedRows(), table.getSelectedColumns()),
+            flipAxes ? "RPM \\ Load" : "Load \\ RPM");
         if (!viewMode && axisImage != null && yBinsField != null) {
             model.onYAxisEdit = (index, value) -> setAxisValue(false, index, value);
         }
         model.xPrecision = xBinsField == null ? precision : IniField.parseDigits(xBinsField.getDigits());
         model.yPrecision = yBinsField == null ? precision : IniField.parseDigits(yBinsField.getDigits());
+        String xLabel = plainLabel(flipAxes ? iniTable.getYLabel() : iniTable.getXLabel());
+        String yLabel = plainLabel(flipAxes ? iniTable.getXLabel() : iniTable.getYLabel());
+        String zLabel = plainLabel(ltft.getUnits());
+        surface3DView.setAxisTitles(xLabel, yLabel, zLabel);
+        mini3DView.setAxisTitles(xLabel, yLabel, zLabel);
         table.setModel(model);
         table.clearSelection();
+        updateSurfaceSelection();
         updateSurfaces(dataValues, xBins, yBins);
     }
 
     public void displayTable(IniFileModel iniFile, String tableName, ConfigurationImage image) {
         displayTable(iniFile, tableName, image, image);
+    }
+
+    private Double[] orientAxis(Double[] bins, boolean inverse) {
+        if (bins == null) {
+            return null;
+        }
+        Double[] oriented = bins.clone();
+        if (inverse) {
+            for (int i = 0; i < bins.length; i++) {
+                oriented[i] = bins[bins.length - 1 - i];
+            }
+        }
+        return oriented;
+    }
+
+    private Double[][] orientData(Double[][] stored) {
+        int rows = flipAxes ? stored[0].length : stored.length;
+        int columns = flipAxes ? stored.length : stored[0].length;
+        Double[][] oriented = new Double[rows][columns];
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                int y = invertY ? rows - 1 - row : row;
+                int x = invertX ? columns - 1 - column : column;
+                oriented[row][column] = flipAxes ? stored[x][y] : stored[y][x];
+            }
+        }
+        return oriented;
+    }
+
+    private Double[][] toStoredData(Double[][] oriented) {
+        int rows = flipAxes ? oriented[0].length : oriented.length;
+        int columns = flipAxes ? oriented.length : oriented[0].length;
+        Double[][] stored = new Double[rows][columns];
+        for (int row = 0; row < oriented.length; row++) {
+            for (int column = 0; column < oriented[row].length; column++) {
+                int y = invertY ? oriented.length - 1 - row : row;
+                int x = invertX ? oriented[row].length - 1 - column : column;
+                stored[flipAxes ? x : y][flipAxes ? y : x] = oriented[row][column];
+            }
+        }
+        return stored;
     }
 
     @Deprecated
@@ -1295,16 +1458,17 @@ public class TuningTableView {
         private final int precision;
         private final boolean editable;
         private final Consumer<TuningTableModel> onCellEdit;
+        private final String axisTitle;
         private BiConsumer<Integer, Object> onYAxisEdit;
         private int xPrecision;
         private int yPrecision;
 
         public TuningTableModel(Double[][] data, Double[] xBins, Double[] yBins, int precision) {
-            this(data, xBins, yBins, precision, true, null);
+            this(data, xBins, yBins, precision, true, null, "Load \\ RPM");
         }
 
         private TuningTableModel(Double[][] data, Double[] xBins, Double[] yBins, int precision,
-                                 boolean editable, Consumer<TuningTableModel> onCellEdit) {
+                                 boolean editable, Consumer<TuningTableModel> onCellEdit, String axisTitle) {
             this.data = data;
             this.xBins = xBins;
             this.yBins = yBins;
@@ -1313,6 +1477,7 @@ public class TuningTableView {
             this.yPrecision = precision;
             this.editable = editable;
             this.onCellEdit = onCellEdit;
+            this.axisTitle = axisTitle;
         }
 
         @Override
@@ -1360,7 +1525,7 @@ public class TuningTableView {
 
         @Override
         public String getColumnName(int column) {
-            if (column == 0) return "Load \\ RPM";
+            if (column == 0) return axisTitle;
             if (xBins != null && column - 1 < xBins.length) {
                 return formatNumber(xBins[column - 1], xPrecision);
             }
@@ -1408,8 +1573,8 @@ public class TuningTableView {
                 return c;
             }
             if (isSelected) {
-                c.setBackground(Color.ORANGE);
-                c.setForeground(Color.BLACK);
+                c.setBackground(Color.ORANGE); // [tag:fixed_color] selected cell
+                c.setForeground(Color.BLACK); // [tag:fixed_color] text on the selected cell
                 return c;
             }
 

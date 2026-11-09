@@ -24,6 +24,11 @@ for style. Keep the original photographs.
 - Give wider connectors more image width, keeping cavity and terminal sizes
   comparable across the family.
 
+The unannotated front-view drawings follow the no-label rule above. Placement
+variants may add a labeled connector schematic in unused image space while
+preserving the terminal positions. See [Connector placement overlays](AI/connector-placement-overlays.md)
+for the reusable method and a super-uaEFI example.
+
 ## Shared coordinates
 
 Every final image has a **1024-pixel canvas height**. The five two-row uaEFI
@@ -84,6 +89,13 @@ family, such as `1A`, rather than converting them to uaEFI's `A1` convention.
 | 60pins-front.png | 60 (34 A + 26 B) | 1973x1024 | 60pin.yaml |
 | 34pins-4k-front.png | 34 C | 1163x1024 | C-34pins-4k.yaml |
 | 26pins-4k-front.png | 26 D | 1097x1024 | 26pin_4k.yaml |
+
+The combined 60-pin housing has two internal locating keys along the top of
+each socket and one centered key along the bottom of each socket. The
+`60pins.jpg` connector-face photo shows this arrangement; preserve it in the
+base drawing and both board-specific annotated versions. These keys sit
+outside the terminal circles, so correcting them does not change `info.pins`
+coordinates.
 
 Pair X coordinates between rows 1/4 and between rows 2/3. Do not align the
 middle rows to the outer rows: that would remove the physical stagger.

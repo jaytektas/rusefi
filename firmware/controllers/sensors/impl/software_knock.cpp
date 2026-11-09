@@ -167,17 +167,17 @@ void initSoftwareKnock() {
 			for (size_t i = 0; i < FFT_SIZE/2; i++)
 			{
 				float freq = float(i * sampleRate) / FFT_SIZE;
-				int min = abs(freq - freqStartConst);
+				int min = static_cast<int>(absF(freq - freqStartConst));
 
 				// next after freq start index
 				if(i == spectrogramStartIndex + 1) {
-					freqStep = abs(freq - freqStart);
+					freqStep = absF(freq - freqStart);
 				}
 
 				if(min < minFreqDiff) {
 					minFreqDiff = min;
 					spectrogramStartIndex = i;
-					freqStart = freq;
+					freqStart = static_cast<int>(freq);
 				}
 			}
 

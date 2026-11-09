@@ -19,6 +19,7 @@
 #include "dc_motors.h"
 #include "idle_hardware.h"
 #include "electronic_throttle.h"
+#include "adc_subscription.h"
 // https://stackoverflow.com/questions/23427804/cant-find-mkdir-function-in-dirent-h-for-windows
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -53,6 +54,8 @@ EngineTestHelperBase::EngineTestHelperBase(Engine * eng, persistent_config_s * p
 	// todo: make this not a global variable, we need currentTimeProvider interface on engine
 	setTimeNowUs(0);
 	ButtonDebounce::resetForUnitTests();
+	AdcSubscription::resetForUnitTest();
+	resetMockAdcVoltages();
 
 	EnableToothLogger();
 	if (engine || engineConfiguration || config) {
@@ -72,6 +75,8 @@ EngineTestHelperBase::EngineTestHelperBase(Engine * eng, persistent_config_s * p
 
 EngineTestHelperBase::~EngineTestHelperBase() {
 	DisableToothLogger();
+	AdcSubscription::resetForUnitTest();
+	resetMockAdcVoltages();
 	engine = nullptr;
 	engineConfiguration = nullptr;
 	config = nullptr;
@@ -156,20 +161,23 @@ EngineTestHelper::EngineTestHelper(engine_type_e engineType, configuration_callb
 
 	resetConfigErrorStateForUnitTest();
 
+	// logging central queues are file-scope statics too: drop lines and the
+	// engine sniffer buffer an earlier test left queued
+	resetLoggingForUnitTest();
 	waveChart.init();
 
 	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -40, 1.5);
 	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -30, 1.5);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -20, 1.42);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -10, 1.36);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 0, 1.28);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 10, 1.19);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 20, 1.12);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 30, 1.10);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 40, 1.06);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 50, 1.06);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 60, 1.03);
-	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 70, 1.01);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -20, 1.42f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -10, 1.36f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 0, 1.28f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 10, 1.19f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 20, 1.12f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 30, 1.10f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 40, 1.06f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 50, 1.06f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 60, 1.03f);
+	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, 70, 1.01f);
 
 	initDataStructures();
 
@@ -295,22 +303,22 @@ void EngineTestHelper::writeEvents2(const char *fileName) {
  * DEPRECATED many usages should be migrated to
  */
 void EngineTestHelper::fireRise(float delayMs) {
-	moveTimeForwardUs(MS2US(delayMs));
+	moveTimeForwardUs(static_cast<int>(MS2US(delayMs)));
 	firePrimaryTriggerRise();
 }
 
 void EngineTestHelper::smartFireRise(float delayMs) {
-	moveTimeForwardAndInvokeEventsUs(MS2US(delayMs));
+	moveTimeForwardAndInvokeEventsUs(static_cast<int>(MS2US(delayMs)));
 	firePrimaryTriggerRise();
 }
 
 void EngineTestHelper::fireFall(float delayMs) {
-	moveTimeForwardUs(MS2US(delayMs));
+	moveTimeForwardUs(static_cast<int>(MS2US(delayMs)));
 	firePrimaryTriggerFall();
 }
 
 void EngineTestHelper::smartFireFall(float delayMs) {
-	moveTimeForwardAndInvokeEventsUs(MS2US(delayMs));
+	moveTimeForwardAndInvokeEventsUs(static_cast<int>(MS2US(delayMs)));
 	firePrimaryTriggerFall();
 }
 
@@ -377,11 +385,11 @@ int EngineTestHelper::executeActions() {
 }
 
 void EngineTestHelper::moveTimeForwardMs(float deltaTimeMs) {
-	moveTimeForwardUs(MS2US(deltaTimeMs));
+	moveTimeForwardUs(static_cast<int>(MS2US(deltaTimeMs)));
 }
 
 void EngineTestHelper::moveTimeForwardSec(float deltaTimeSec) {
-	moveTimeForwardUs(MS2US(1000 * deltaTimeSec));
+	moveTimeForwardUs(static_cast<int>(MS2US(1000 * deltaTimeSec)));
 }
 
 void EngineTestHelper::moveTimeForwardUs(int deltaTimeUs) {
@@ -408,7 +416,7 @@ void EngineTestHelper::moveTimeForwardAndInvokeEventsUs(int deltaTimeUs) {
 void EngineTestHelper::setTimeNtAndInvokeCallBacks(efitick_t nt)
 {
 	// we need to call fast callback every FAST_CALLBACK_PERIOD_MS
-	efitick_t step = MS2US(FAST_CALLBACK_PERIOD_MS) * US_TO_NT_MULTIPLIER;
+	efitick_t step = static_cast<efitick_t>(MS2US(FAST_CALLBACK_PERIOD_MS) * US_TO_NT_MULTIPLIER);
 
 	while (getTimeNowNt() < nt) {
 		// get next FAST_CALLBACK_PERIOD_MS tick time
@@ -527,7 +535,7 @@ bool EngineTestHelper::assertEventExistsAtEnginePhase(const char *msg, action_s 
 
 		if(action_scheduled.getCallback() == action_expected.getCallback()) {
 			efitimeus_t start = getTimeNowUs();
-			efitimeus_t expectedTimestamp = angleToTimeUs(expectedEventEnginePhase);
+			efitimeus_t expectedTimestamp = static_cast<efitimeus_t>(angleToTimeUs(expectedEventEnginePhase));
 			// after #7245 we can increase the resolution of this test for expect 0.5 or less
 			EXPECT_NEAR( expectedTimestamp, event->getMomentUs() - start, angleToTimeUs( 1 ) )
                             << "Expected angle: " << expectedEventEnginePhase << " but got " << (event->getMomentUs() - start) / engine.rpmCalculator.oneDegreeUs << " -- "
@@ -542,7 +550,7 @@ void EngineTestHelper::spin60_2UntilDeg(struct testSpinEngineUntilData& spinInfo
   	volatile float tick_per_deg = 6000 * 60 / 360 / (float)targetRpm;
 	constexpr float tooth_per_deg = 360 / 60;
 
-	size_t targetTooth = (targetDegree - spinInfo.currentDegree) / tooth_per_deg;
+	size_t targetTooth = static_cast<size_t>((targetDegree - spinInfo.currentDegree) / tooth_per_deg);
 
 	for (size_t i = 0; i < targetTooth; i++) {
 		if (spinInfo.currentTooth < 30 || spinInfo.currentTooth > 31) {

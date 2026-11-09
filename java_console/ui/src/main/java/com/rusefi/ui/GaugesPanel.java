@@ -6,15 +6,19 @@ import com.rusefi.core.WellKnownGauges;
 import com.rusefi.core.preferences.storage.Node;
 import com.rusefi.core.preferences.storage.PersistentConfiguration;
 import com.rusefi.ui.widgets.AnyCommand;
-import com.rusefi.ui.widgets.ChevronIcon;
+import com.formdev.flatlaf.FlatClientProperties;
+import com.rusefi.ui.widgets.EditIcon;
 import com.rusefi.ui.widgets.JoinedButtons;
-import com.rusefi.ui.widgets.SegmentedControl;
 import com.rusefi.ui.widgets.DetachedSensor;
 import com.rusefi.ui.widgets.GaugeMenuSearch;
 import com.rusefi.ui.widgets.SensorGauge;
+import com.rusefi.ui.widgets.tune.IndicatorStrip;
+import com.rusefi.ui.widgets.tune.IndicatorStripSettings;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import javax.swing.event.MenuEvent;
+import javax.swing.event.MenuListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.io.File;
@@ -47,28 +51,45 @@ public class GaugesPanel {
     public static final String DISABLE_LOGS = "DISABLE_LOGS";
     private static final int DEFAULT_ROWS = 3;
     private static final int DEFAULT_COLUMNS = 3;
-    static final String EDIT_LAYOUT = "Edit Layout";
+    static final String EDIT_DASHBOARD = "Edit dashboard";
+    static final String EDIT_LAYOUT = "Arrange gauges";
     static final String DONE_EDITING = "Done";
+    static final String UNDO = "Undo";
+    static final String REDO = "Redo";
+    static final String RESET_ARRANGE = "Reset";
     static final String RESET_LAYOUT = "Reset Layout";
-    // no "…": after the "Layout" label a shortened "Save…" read as a truncated "Save Layout"
-    static final String SAVE_LAYOUT = "Save";
-    static final String LOAD_LAYOUT = "Load";
-    static final String RESET = "Reset";
+    static final String SAVE_LAYOUT = "Save layout…";
+    static final String LOAD_LAYOUT = "Load layout…";
+    static final String RESET = "Reset layout…";
+    static final String INDICATORS = "Indicators";
 
     private final JPanel content = new JPanel(new BorderLayout());
     private final GaugesGrid gauges;
     private final FreeGaugeArea freeArea;
-    private final JButton addGaugeButton = new JButton("Add Gauge");
-    private final JToggleButton editLayoutButton = new JToggleButton(EDIT_LAYOUT);
     private final JPanel layoutArea = new JPanel(new BorderLayout());
-    private final JToggleButton gridModeButton = SegmentedControl.segment("Grid");
-    private final JToggleButton freeModeButton = SegmentedControl.segment("Free");
-    private JButton gridSizeButton;
+    /*
+     * Dashboard editing lives in one "Edit dashboard" menu; the toolbar only shows the current
+     * layout and, while gauges are being arranged, Undo / Redo / Reset and a Done button to leave that mode.
+     */
+    private final JPopupMenu editMenu = new JPopupMenu();
+    private final JRadioButtonMenuItem gridModeItem = new JRadioButtonMenuItem("Grid layout");
+    private final JRadioButtonMenuItem freeModeItem = new JRadioButtonMenuItem("Free layout");
+    private final JMenu gridSizeMenu = new JMenu("Grid size");
+    private final JMenuItem addGaugeItem = new JMenuItem("Add gauge…");
+    private final JMenuItem editLayoutItem = new JMenuItem(EDIT_LAYOUT);
+    private final JMenu indicatorsMenu = new JMenu(INDICATORS);
+    private final JButton editDashboardButton = new JButton(EDIT_DASHBOARD, new EditIcon());
+    private final JButton doneEditingButton = new JButton(DONE_EDITING);
+    private final JButton undoButton = new JButton(UNDO);
+    private final JButton redoButton = new JButton(REDO);
+    private final JButton resetArrangeButton = new JButton(RESET_ARRANGE);
+    private final JLabel layoutModeLabel = new JLabel();
     private final Node config;
     private final UIContext uiContext;
     /** Tracked so we can call destroy() before replacing on grid resize. */
     private final List<GaugesGridElement> gaugeElements = new ArrayList<>();
     private final ISensorCentral.ListenerToken rpmDemandToken;
+    private final IndicatorStrip indicatorStrip;
     private RpmLabel rpmLabel;
     private boolean active;
 
@@ -80,6 +101,8 @@ public class GaugesPanel {
         rpmDemandToken = SensorCentral.getInstance().addListener(
             WellKnownGauges.RPMGauge.getOutputChannelName(), value -> { });
         rpmDemandToken.setActive(false);
+        indicatorStrip = new IndicatorStrip(() -> uiContext.iniFileState.getIniFileModel(),
+            uiContext.indicatorStripSettings);
 
         int rows = config.getIntProperty(GaugeLayout.ROWS, DEFAULT_ROWS);
         int columns = config.getIntProperty(GaugeLayout.COLUMNS, DEFAULT_COLUMNS);
@@ -88,74 +111,148 @@ public class GaugesPanel {
         content.add(createTopPanel(), BorderLayout.NORTH);
         showLayout();
         content.add(layoutArea, BorderLayout.CENTER);
-
-        content.add(new WarningPanel(config).getPanel(config), BorderLayout.SOUTH);
     }
 
     @NotNull
     private JPanel createTopPanel() {
-        JPanel upperPanel = new JPanel(new BorderLayout());
-        upperPanel.add(createLeftTopPanel(), BorderLayout.CENTER);
-        upperPanel.add(createRightTopPanel(), BorderLayout.EAST);
-        return upperPanel;
+        // white toolbar with a divider below, matching the status strip at the bottom (WarningPanel)
+        JPanel toolbar = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Color background = UIManager.getColor("Console.Toolbar.background");
+                g.setColor(background != null ? background : getBackground());
+                g.fillRect(0, 0, getWidth(), getHeight());
+                Color line = UIManager.getColor("Separator.foreground");
+                g.setColor(line != null ? line : Color.LIGHT_GRAY);
+                g.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+            }
+        };
+        toolbar.setLayout(new BoxLayout(toolbar, BoxLayout.Y_AXIS));
+        // same right inset as the tab row above, so Edit dashboard stacks under Launch Wizard
+        int rightInset = JoinedButtons.ROW_END_INSET - JoinedButtons.ROW_GAP;
+        toolbar.setBorder(BorderFactory.createEmptyBorder(8, 0, 5, rightInset));
+
+        JPanel commandRow = new JPanel(new BorderLayout());
+        commandRow.setOpaque(false);
+        commandRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+        JPanel left = createLeftTopPanel();
+        JPanel right = createRightTopPanel();
+        left.setOpaque(false);
+        right.setOpaque(false);
+        commandRow.add(left, BorderLayout.CENTER);
+        commandRow.add(right, BorderLayout.EAST);
+        toolbar.add(commandRow);
+
+        // the indicator chips, under the command bar; the strip's 6px gap plus 2 lines them up with the RPM label
+        JComponent indicators = indicatorStrip.getContent();
+        indicators.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+        toolbar.add(indicators);
+        return toolbar;
     }
 
     @NotNull
     private JPanel createRightTopPanel() {
-        JPanel rightUpperPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel rightUpperPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, JoinedButtons.ROW_GAP, 0));
 
-        JLabel layoutLabel = new JLabel("Layout");
-        layoutLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
-        rightUpperPanel.add(layoutLabel);
-        gridModeButton.setToolTipText("Gauges fill a grid of rows and columns");
-        freeModeButton.setToolTipText("Gauges can be placed anywhere and sized individually; the grid is kept");
+        layoutModeLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
+        rightUpperPanel.add(layoutModeLabel);
+
+        // shown only while gauges are being arranged; return focus to the editor so its keys keep working
+        undoButton.setToolTipText("Undo the last layout change (Ctrl+Z)");
+        undoButton.addActionListener(e -> {
+            freeArea.undo();
+            freeArea.getEditor().requestFocusInWindow();
+        });
+        redoButton.setToolTipText("Redo the last undone layout change (Ctrl+Y)");
+        redoButton.addActionListener(e -> {
+            freeArea.redo();
+            freeArea.getEditor().requestFocusInWindow();
+        });
+        resetArrangeButton.setToolTipText("Return to the grid you started from; Undo brings your arrangement back");
+        resetArrangeButton.addActionListener(e -> {
+            freeArea.resetToGrid();
+            freeArea.getEditor().requestFocusInWindow();
+        });
+        rightUpperPanel.add(new JoinedButtons(undoButton, redoButton, resetArrangeButton));
+
+        // shown only while gauges are being arranged: the way out of that mode (Esc works too)
+        // a plain button (not a JoinedButtons group) so it shows and hides in step with the editor
+        doneEditingButton.putClientProperty(FlatClientProperties.STYLE_CLASS, "primary");
+        doneEditingButton.setToolTipText("Finish arranging gauges (Esc)");
+        doneEditingButton.setPreferredSize(new Dimension(
+            doneEditingButton.getPreferredSize().width + 24, JoinedButtons.HEIGHT));
+        doneEditingButton.addActionListener(e -> freeArea.setEditing(false));
+        rightUpperPanel.add(doneEditingButton);
+
+        gridModeItem.setToolTipText("Gauges fill a grid of rows and columns");
+        freeModeItem.setToolTipText("Gauges can be placed anywhere and sized individually; the grid is kept");
         ButtonGroup modeGroup = new ButtonGroup();
-        modeGroup.add(gridModeButton);
-        modeGroup.add(freeModeButton);
-        gridModeButton.addActionListener(e -> setFreeMode(false));
-        freeModeButton.addActionListener(e -> setFreeMode(true));
-        rightUpperPanel.add(new SegmentedControl(gridModeButton, freeModeButton));
+        modeGroup.add(gridModeItem);
+        modeGroup.add(freeModeItem);
+        gridModeItem.addActionListener(e -> setFreeMode(false));
+        freeModeItem.addActionListener(e -> setFreeMode(true));
+        editMenu.add(gridModeItem);
+        editMenu.add(freeModeItem);
+        editMenu.addSeparator();
 
-        addGaugeButton.setToolTipText("Add a gauge to the free layout");
-        addGaugeButton.addActionListener(e -> createAddGaugeMenu().show(addGaugeButton, 0, addGaugeButton.getHeight()));
-
-        editLayoutButton.setToolTipText("Move, resize, stack and remove gauges");
-        editLayoutButton.addActionListener(e -> freeArea.setEditing(editLayoutButton.isSelected()));
-        // Free-mode tools; the group hides itself in Grid mode, when both buttons are hidden
-        rightUpperPanel.add(new JoinedButtons(addGaugeButton, editLayoutButton));
-
-        // short names: the "Layout" label and the tooltips say what is saved, loaded or reset
-        JButton saveLayout = new JButton(SAVE_LAYOUT);
-        saveLayout.setToolTipText("Save the gauge layout and graph settings to a file");
-        saveLayout.addActionListener(e -> chooseLayoutFile(true));
-
-        JButton loadLayout = new JButton(LOAD_LAYOUT);
-        loadLayout.setToolTipText("Replace the gauge layout with a saved one");
-        loadLayout.addActionListener(e -> chooseLayoutFile(false));
-
-        JButton resetLayout = new JButton(RESET);
-        resetLayout.setToolTipText("Reset layout. Grid: return to the default gauges. Free: return to the grid you started from");
-        resetLayout.addActionListener(e -> confirmResetLayout());
-        rightUpperPanel.add(new JoinedButtons(saveLayout, loadLayout, resetLayout));
-
-        final JPopupMenu selectorMenu = new JPopupMenu();
-        selectorMenu.add(new SizeSelectorPanel((row, column) -> {
+        gridSizeMenu.setToolTipText("Choose the number of gauge rows and columns");
+        gridSizeMenu.add(new SizeSelectorPanel((row, column) -> {
             System.out.println("new size " + row + "/" + column);
+            // close the whole menu once a size is picked
+            MenuSelectionManager.defaultManager().clearSelectedPath();
             setSensorGridDimensions(row, column);
         }));
+        editMenu.add(gridSizeMenu);
 
-        // shows the current size, e.g. "Grid 3 × 3", and opens the size picker
-        JButton selector = new JButton(gridSizeText(), new ChevronIcon());
-        selector.setHorizontalTextPosition(SwingConstants.LEADING);
-        selector.setIconTextGap(8);
-        gridSizeButton = selector;
-        selector.setToolTipText("Choose the number of gauge rows and columns");
-        selector.addActionListener(e -> {
-            Component c = (Component) e.getSource();
-            selectorMenu.show(c, -1, c.getHeight());
+        addGaugeItem.setToolTipText("Add a gauge to the free layout");
+        addGaugeItem.addActionListener(e ->
+            createAddGaugeMenu().show(editDashboardButton, 0, editDashboardButton.getHeight()));
+        editMenu.add(addGaugeItem);
+        editLayoutItem.setToolTipText("Move, resize, stack and remove gauges");
+        editLayoutItem.addActionListener(e -> freeArea.setEditing(true));
+        editMenu.add(editLayoutItem);
+        editMenu.addSeparator();
+
+        // the same menu as right-clicking the indicator strip, filled when opened since it lists the hidden chips
+        indicatorsMenu.setToolTipText("Show hidden indicators or reset their order; drag a chip to move it");
+        indicatorsMenu.addMenuListener(new MenuListener() {
+            @Override
+            public void menuSelected(MenuEvent e) {
+                indicatorsMenu.removeAll();
+                indicatorStrip.fillMenu(indicatorsMenu, null);
+            }
+
+            @Override
+            public void menuDeselected(MenuEvent e) {
+            }
+
+            @Override
+            public void menuCanceled(MenuEvent e) {
+            }
         });
-        rightUpperPanel.add(new JoinedButtons(selector));
+        editMenu.add(indicatorsMenu);
+        editMenu.addSeparator();
 
+        JMenuItem saveLayout = new JMenuItem(SAVE_LAYOUT);
+        saveLayout.setToolTipText("Save the gauge layout and graph settings to a file");
+        saveLayout.addActionListener(e -> chooseLayoutFile(true));
+        editMenu.add(saveLayout);
+
+        JMenuItem loadLayout = new JMenuItem(LOAD_LAYOUT);
+        loadLayout.setToolTipText("Replace the gauge layout with a saved one");
+        loadLayout.addActionListener(e -> chooseLayoutFile(false));
+        editMenu.add(loadLayout);
+
+        JMenuItem resetLayout = new JMenuItem(RESET);
+        resetLayout.setToolTipText("Grid: return to the default gauges. Free: return to the grid you started from");
+        resetLayout.addActionListener(e -> confirmResetLayout());
+        editMenu.add(resetLayout);
+
+        editDashboardButton.setIconTextGap(8);
+        editDashboardButton.setToolTipText("Layout, gauges and saved dashboards");
+        editDashboardButton.addActionListener(e ->
+            editMenu.show(editDashboardButton, 0, editDashboardButton.getHeight()));
+        rightUpperPanel.add(new JoinedButtons(editDashboardButton));
 
         return rightUpperPanel;
     }
@@ -195,11 +292,16 @@ public class GaugesPanel {
 
     // Package-private so tests exercise the same file operations as the chooser.
     void saveLayout(Path file) throws IOException {
-        GaugeLayout.save(file, config);
+        GaugeLayout.save(file, config, uiContext.indicatorStripSettings);
     }
 
     void loadLayout(Path file) throws IOException {
         Node layout = GaugeLayout.load(file);
+        // the indicator strip travels with the layout but is kept apart from the gauges
+        Object indicators = layout.getConfig().remove(IndicatorStripSettings.NODE);
+        if (indicators instanceof Node) {
+            uiContext.indicatorStripSettings.replaceWith((Node) indicators);
+        }
         // Leave warning and command preferences intact; discard old, including hidden, slots.
         // A version 1 file has no free layout, so it returns to Grid.
         config.getConfig().keySet().removeIf(key -> key.matches("element_\\d+") || key.equals(GaugeLayout.MODE));
@@ -234,22 +336,17 @@ public class GaugesPanel {
     /**
      * Grid: the default gauges in the default grid, each shown as a round gauge.
      * Free: a fresh copy of the current grid, which Free mode never changes, so this
-     * undoes every free-layout edit and stays in Free mode.
+     * undoes every free-layout edit and stays in Free mode; while arranging, Undo reverts it.
      */
     // Package-private so tests reset without the confirmation dialog.
     void resetLayout() {
         if (GaugeLayout.isFreeMode(config)) {
-            GaugeLayout.seedFreeFromGrid(config);
-        } else {
-            config.getConfig().keySet().removeIf(key -> key.matches("element_\\d+"));
-            saveConfig(DEFAULT_ROWS, DEFAULT_COLUMNS);
+            freeArea.resetToGrid();
+            return;
         }
+        config.getConfig().keySet().removeIf(key -> key.matches("element_\\d+"));
+        saveConfig(DEFAULT_ROWS, DEFAULT_COLUMNS);
         showLayout();
-    }
-
-    String gridSizeText() {
-        return "Grid " + config.getIntProperty(GaugeLayout.ROWS, DEFAULT_ROWS)
-            + " × " + config.getIntProperty(GaugeLayout.COLUMNS, DEFAULT_COLUMNS);
     }
 
     private void setSensorGridDimensions(int rows, int columns) {
@@ -296,10 +393,6 @@ public class GaugesPanel {
                 config.getIntProperty(GaugeLayout.COLUMNS, DEFAULT_COLUMNS));
         }
         layoutArea.add(free ? freeArea.getPanel() : gauges.panel, BorderLayout.CENTER);
-        gridModeButton.setSelected(!free);
-        freeModeButton.setSelected(free);
-        gridSizeButton.setVisible(!free);
-        gridSizeButton.setText(gridSizeText());
         updateFreeControls();
         layoutArea.revalidate();
         layoutArea.repaint();
@@ -320,13 +413,24 @@ public class GaugesPanel {
         }
     }
 
-    /** Keeps the free-layout buttons in step with the mode and the editor. */
+    /** Keeps the layout label, the Edit dashboard menu and the arranging buttons in step with the mode and the editor. */
     private void updateFreeControls() {
         boolean free = GaugeLayout.isFreeMode(config);
-        addGaugeButton.setVisible(free);
-        editLayoutButton.setVisible(free);
-        editLayoutButton.setSelected(freeArea.isEditing());
-        editLayoutButton.setText(freeArea.isEditing() ? DONE_EDITING : EDIT_LAYOUT);
+        boolean editing = freeArea.isEditing();
+        layoutModeLabel.setText(free ? "Free layout" : "Grid layout · "
+            + config.getIntProperty(GaugeLayout.ROWS, DEFAULT_ROWS) + " × "
+            + config.getIntProperty(GaugeLayout.COLUMNS, DEFAULT_COLUMNS));
+        gridModeItem.setSelected(!free);
+        freeModeItem.setSelected(free);
+        gridSizeMenu.setEnabled(!free);
+        addGaugeItem.setEnabled(free);
+        editLayoutItem.setEnabled(free && !editing);
+        doneEditingButton.setVisible(editing);
+        undoButton.setVisible(editing);
+        redoButton.setVisible(editing);
+        resetArrangeButton.setVisible(editing);
+        undoButton.setEnabled(freeArea.canUndo());
+        redoButton.setEnabled(freeArea.canRedo());
     }
 
     /** Gauge catalog with search; the chosen gauge is added to the free layout. */
@@ -343,6 +447,11 @@ public class GaugesPanel {
         return menu;
     }
 
+    // Package-private so tests see the indicator strip under the command bar.
+    IndicatorStrip getIndicatorStrip() {
+        return indicatorStrip;
+    }
+
     // Package-private so tests drive the free layout and its editor.
     FreeGaugeArea getFreeArea() {
         return freeArea;
@@ -352,16 +461,40 @@ public class GaugesPanel {
         return freeArea.getPanel();
     }
 
-    JToggleButton getEditLayoutButton() {
-        return editLayoutButton;
+    JPopupMenu getEditMenu() {
+        return editMenu;
     }
 
-    JButton getAddGaugeButton() {
-        return addGaugeButton;
+    JMenuItem getEditLayoutItem() {
+        return editLayoutItem;
     }
 
-    JButton getGridSizeButton() {
-        return gridSizeButton;
+    JMenuItem getAddGaugeItem() {
+        return addGaugeItem;
+    }
+
+    JMenu getGridSizeMenu() {
+        return gridSizeMenu;
+    }
+
+    JButton getDoneEditingButton() {
+        return doneEditingButton;
+    }
+
+    JButton getUndoButton() {
+        return undoButton;
+    }
+
+    JButton getRedoButton() {
+        return redoButton;
+    }
+
+    JButton getResetArrangeButton() {
+        return resetArrangeButton;
+    }
+
+    JLabel getLayoutModeLabel() {
+        return layoutModeLabel;
     }
 
     private List<String> getDefaultLayout() {
@@ -380,6 +513,7 @@ public class GaugesPanel {
     public void setActive(boolean active) {
         this.active = active;
         rpmDemandToken.setActive(active);
+        indicatorStrip.setActive(active);
         for (GaugesGridElement element : gaugeElements) {
             element.setActive(active);
         }
@@ -393,6 +527,7 @@ public class GaugesPanel {
         gaugeElements.clear();
         freeArea.destroy();
         rpmDemandToken.remove();
+        indicatorStrip.destroy();
         rpmLabel.destroy();
     }
 

@@ -28,7 +28,7 @@ static const float hardCodedHpfpLobeProfileAnglesForThreeLobes[16] = {0.0, 7.5, 
 96.0 , 103.5, 112.5, 120.0
 };
 
-  float multiplier = 3.0 / lobes;
+  float multiplier = 3.0f / lobes;
 	for (size_t i = 0; i < HPFP_LOBE_PROFILE_SIZE; i++) {
     config->hpfpLobeProfileAngle[i] = multiplier * hardCodedHpfpLobeProfileAnglesForThreeLobes[i];
 	}
@@ -43,13 +43,13 @@ static void setDefaultHPFP() {
 
 // todo: would be nice for unit tests to be happy about these defaults
 #if EFI_PROD_CODE || EFI_SIMULATOR
-	engineConfiguration->hpfpPumpVolume = 0.290;
+	engineConfiguration->hpfpPumpVolume = 0.290f;
 #endif
 	engineConfiguration->hpfpMinAngle = 10;
 	engineConfiguration->hpfpActivationAngle = 30;
 	engineConfiguration->hpfpTargetDecay = 2000;
-	engineConfiguration->hpfpPidP = 0.01;
-	engineConfiguration->hpfpPidI = 0.0003;
+	engineConfiguration->hpfpPidP = 0.01f;
+	engineConfiguration->hpfpPidI = 0.0003f;
 	engineConfiguration->hpfpPeakPos = 10;
 }
 
@@ -62,7 +62,7 @@ static void setGdiDefaults() {
 
 	setLinearCurve(config->hpfpFuelMassCompensationFuelMass, 0.0, 500, 10);
 	setLinearCurve(config->hpfpFuelMassCompensationFuelPressure, 0, 300, 25);
-	setTable(config->hpfpFuelMassCompensation, 1.0);
+	setTable(config->hpfpFuelMassCompensation, 1.0f);
 
 	setLinearCurve(config->injectorFlowLinearizationFuelMassBins, 0.0, 500, 10);
 	setLinearCurve(config->injectorFlowLinearizationPressureBins, 0, 300, 25);
@@ -85,7 +85,7 @@ void setGDIFueling() {
 	// Reference rail pressure is 10 000 kPa = 100 bar
 	engineConfiguration->fuelReferencePressure = 10000;
 	//setting "flat" 0.2 ms injector's lag time
-	setTable(engineConfiguration->injector.battLagCorrTable, 0.2);
+	setTable(engineConfiguration->injector.battLagCorrTable, 0.2f);
 
 	setTable(config->injectionPhase, -200.0f);
 	engineConfiguration->injectionTimingMode = InjectionTimingMode::Center;
@@ -119,12 +119,12 @@ void setDynoDefaults() {
 
     config->dynoCarGearPrimaryReduction = 1;
     config->dynoCarGearRatio = 1.0;
-    config->dynoCarGearFinalDrive = 4.2;
+    config->dynoCarGearFinalDrive = 4.2f;
 
     config->dynoCarCarMassKg = 1000;
     config->dynoCarCargoMassKg = 95;
-    config->dynoCarCoeffOfDrag = 0.29;
-    config->dynoCarFrontalAreaM2 = 1.85;
+    config->dynoCarCoeffOfDrag = 0.29f;
+    config->dynoCarFrontalAreaM2 = 1.85f;
  }
 
 bool applyDefaultsOrFixAfterBurn(const engine_configuration_s* previousConfiguration) {
@@ -289,20 +289,20 @@ bool applyDefaultsOrFixAfterBurn(const engine_configuration_s* previousConfigura
 		engineConfiguration->vvtExhaust_iTermMax = 1000;
 		changed = true;
 	}
-	if (engineConfiguration->vvtAdvDistanceBinsIntake[VVT_ADV_DISTANCE_SIZE - 1] == 0) {
-		setLinearCurve(engineConfiguration->vvtAdvDistanceBinsIntake, -40, 40, 1);
+	if (config->vvtAdvDistanceBinsIntake[VVT_ADV_DISTANCE_SIZE - 1] == 0) {
+		setLinearCurve(config->vvtAdvDistanceBinsIntake, -40, 40, 1);
 		changed = true;
 	}
-	if (engineConfiguration->vvtAdvDistanceBinsExhaust[VVT_ADV_DISTANCE_SIZE - 1] == 0) {
-		setLinearCurve(engineConfiguration->vvtAdvDistanceBinsExhaust, -40, 40, 1);
+	if (config->vvtAdvDistanceBinsExhaust[VVT_ADV_DISTANCE_SIZE - 1] == 0) {
+		setLinearCurve(config->vvtAdvDistanceBinsExhaust, -40, 40, 1);
 		changed = true;
 	}
-	if (engineConfiguration->vvtAdvOilPressureBinsIntake[VVT_ADV_OILP_SIZE - 1] == 0) {
-		setLinearCurve(engineConfiguration->vvtAdvOilPressureBinsIntake, 0, 1000, 1);
+	if (config->vvtAdvOilPressureBinsIntake[VVT_ADV_OILP_SIZE - 1] == 0) {
+		setLinearCurve(config->vvtAdvOilPressureBinsIntake, 0, 1000, 1);
 		changed = true;
 	}
-	if (engineConfiguration->vvtAdvOilPressureBinsExhaust[VVT_ADV_OILP_SIZE - 1] == 0) {
-		setLinearCurve(engineConfiguration->vvtAdvOilPressureBinsExhaust, 0, 1000, 1);
+	if (config->vvtAdvOilPressureBinsExhaust[VVT_ADV_OILP_SIZE - 1] == 0) {
+		setLinearCurve(config->vvtAdvOilPressureBinsExhaust, 0, 1000, 1);
 		changed = true;
 	}
 
@@ -397,7 +397,7 @@ void setDefaultBaseEngine() {
 
   engineConfiguration->watchOutForLinearTime = true;
 
-  setLinearCurve(engineConfiguration->tractionControlSlipBins, /*from*/0.9, /*to*/1.2, 0.05);
+  setLinearCurve(engineConfiguration->tractionControlSlipBins, /*from*/0.9f, /*to*/1.2f, 0.05f);
 	setLinearCurve(engineConfiguration->tractionControlSpeedBins, /*from*/10, /*to*/120, 5);
 
 	engineConfiguration->turbochargerFilter = 0.01f;

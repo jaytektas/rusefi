@@ -7,7 +7,8 @@ import com.opensr5.ini.RawIniFile;
 import com.rusefi.binaryprotocol.BinaryProtocol;
 import com.rusefi.core.preferences.storage.Node;
 import com.rusefi.ini.reader.IniFileReaderUtil;
-import com.rusefi.ui.widgets.SensorGauge;
+import com.rusefi.core.SensorCategory;
+import com.rusefi.ui.widgets.GaugeOptionsButton;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.*;
@@ -61,7 +62,7 @@ class SensorLiveGraphTest {
     }
 
     @Test
-    void popupPutsSearchAndGaugeCatalogFirst() throws Throwable {
+    void rightClickListsGaugeGroupsAndTheGearHoldsGraphOptions() throws Throwable {
         SwingUtilities.invokeAndWait(() -> {
             UIContext context = new UIContext();
             JMenu displayAs = new JMenu(GaugesGridElement.DISPLAY_AS);
@@ -70,18 +71,29 @@ class SensorLiveGraphTest {
                 graph.setActive(false);
                 JPopupMenu menu = graph.createPopupMenu();
                 assertTrue(menu.getComponent(0) instanceof JPanel, "Search field is at the top");
-                List<String> items = new ArrayList<>();
-                for (Component component : menu.getComponents()) {
-                    if (component instanceof JMenuItem && component.isVisible()) {
-                        items.add(((JMenuItem) component).getText());
-                    }
+                List<String> groups = new ArrayList<>();
+                for (SensorCategory category : SensorCategory.values()) {
+                    groups.add(category.getName());
                 }
-                assertEquals(java.util.Arrays.asList(SensorGauge.CHANGE_GAUGE, "Refresh period", "Scale",
-                    GaugesGridElement.DISPLAY_AS), items);
+                assertEquals(groups, visibleItems(menu), "Without an .ini, the built-in groups are listed directly");
+
+                assertTrue(graph.getComponent(0) instanceof GaugeOptionsButton);
+                assertEquals(java.util.Arrays.asList("Refresh period", "Scale", GaugesGridElement.DISPLAY_AS),
+                    visibleItems(graph.createOptionsMenu()));
             } finally {
                 graph.destroy();
             }
         });
+    }
+
+    private static List<String> visibleItems(JPopupMenu menu) {
+        List<String> items = new ArrayList<>();
+        for (Component component : menu.getComponents()) {
+            if (component instanceof JMenuItem && component.isVisible()) {
+                items.add(((JMenuItem) component).getText());
+            }
+        }
+        return items;
     }
 
     /**
@@ -221,5 +233,45 @@ class SensorLiveGraphTest {
             }
         }
         return paths;
+    }
+
+    @Test
+    void zoneBandsFollowTheRoundGaugeZones() {
+        // coolant-like: only high warning and danger in the .ini; the danger value snaps to a whole percent of the
+        // scale as on the round gauge (105 on -40..140 is 105.8), so both flag the same readings
+        assertEquals("[BELOW_SCALE -Infinity..-40.0, WARNING 95.0..105.8, DANGER 105.8..Infinity]", SensorLiveGraph.bands(
+            com.rusefi.ui.widgets.CircularGauge.Zones.of(-40, 140, Double.NaN, Double.NaN, 95, 105)).toString());
+        assertEquals("[BELOW_SCALE -Infinity..0.0, DANGER 0.0..10.0, WARNING 10.0..20.0, WARNING 80.0..90.0, DANGER 90.0..Infinity]",
+            SensorLiveGraph.bands(com.rusefi.ui.widgets.CircularGauge.Zones.of(0, 100, 10, 20, 80, 90)).toString());
+    }
+
+    @Test
+    void graphsShowTheFullScaleUnlessZoomedToTheReadings() throws Throwable {
+        SwingUtilities.invokeAndWait(() -> {
+            UIContext context = GaugesPanelLayoutTest.createContext();
+            Node config = new Node();
+            config.setBoolProperty("auto_scale", true); // the older setting: such graphs now start at full scale
+            SensorLiveGraph graph = new SensorLiveGraph(context, config, "RPMGauge", null);
+            try {
+                graph.setActive(false);
+                GaugeModel model = context.iniFileState.getIniFileModel().getGauge("RPMGauge");
+                SensorLiveGraph.VisibleRange range = graph.getRange(new double[] {1000, 2000}, model);
+                assertEquals(0, range.minValue);
+                assertEquals(8000, range.maxValue);
+
+                JMenu scale = (JMenu) java.util.Arrays.stream(graph.createOptionsMenu().getComponents())
+                    .filter(c -> c instanceof JMenu && "Scale".equals(((JMenu) c).getText())).findFirst().orElseThrow();
+                JRadioButtonMenuItem full = (JRadioButtonMenuItem) scale.getMenuComponent(0);
+                JRadioButtonMenuItem zoom = (JRadioButtonMenuItem) scale.getMenuComponent(1);
+                assertEquals(SensorLiveGraph.FULL_SCALE, full.getText());
+                assertTrue(full.isSelected());
+                zoom.doClick();
+                assertTrue(config.getBoolProperty("zoom_to_readings"));
+                range = graph.getRange(new double[] {1000, 2000}, model);
+                assertTrue(range.minValue > 900 && range.maxValue < 2100, "zoomed to the readings");
+            } finally {
+                graph.destroy();
+            }
+        });
     }
 }

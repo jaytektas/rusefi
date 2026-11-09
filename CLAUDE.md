@@ -66,8 +66,18 @@ that a particular board was built.
 The host build shadows `firmware/hw_layer/adc/adc_inputs.h` with
 `unit_tests/adc_inputs.h`. Including the short name in a host test does not
 expose newly added production declarations; keep the mock declaration in sync
-when testing a shared ADC entry point. Host ADC subscriptions are stubs, so
-converter tests do not establish DMA acquisition, filtering or sample freshness.
+when testing a shared ADC entry point. Host tests run the shared ADC subscription
+and filtering code with per-channel voltages supplied by `setMockAdcVoltage()`.
+Call `AdcSubscription::UpdateSubscribers()` explicitly to deliver samples;
+posting directly to a sensor cannot establish that it remains subscribed.
+`EngineTestHelper` clears subscriptions and mock voltages between tests. These
+host tests do not establish hardware DMA acquisition or pin configuration.
+
+`TEST_ENGINE` enables MAF by default. In host tests, `init_maf.cpp`'s static
+`mafCurve` binds its table references before `EngineTestHelper` installs `config`;
+delivering ADC samples to that MAF converter dereferences an invalid table.
+Disable both MAF ADC channels in unrelated subscription tests (see
+`MapSensorReconfiguration`); testing MAF delivery requires fixing that lifetime.
 
 ```bash
 cd unit_tests
@@ -119,6 +129,12 @@ If a fresh unit-test build fails with `can't create build/obj/*.o: No such file 
 When testing actuator init paths, remember that `EngineTestHelper` construction already runs `commonInitEngineController()` -> `initElectronicThrottle()`: with `TEST_ENGINE` (which defaults `etbFunctions[0]=DC_Wastegate`) DC hardware pool slot 0 is started *before* the test body runs, and the `DcHardware::isStarted` latch silently ignores any re-init with different settings. Call `resetDcHardwareForUnitTest()` / `resetIdleHardwareForUnitTest()` (both `EFI_UNIT_TEST` seams; also invoked by the `EngineTestHelper` constructor for cross-test isolation) before re-initializing with test-specific config. The idle stepper stack (`initIdleHardware()`, `StepDirectionStepper`, `DualHBridgeStepper`) compiles in unit tests; in that build `StepperMotor` is an alias of `StepperMotorBase` with no thread — tests drive it by calling `doIteration()` manually (see `test_idle_hardware.cpp`).
 
 #### Troubleshooting test output
+
+`RpmCalculator::setRpmValue()` invokes `periodicFastCallback()` when RPM changes
+from zero to nonzero. This recalculates target lambda and other fuel state even
+in a test that otherwise calls only one controller. Set controlled fuel inputs
+after starting/restarting RPM, or use the recalculated target when checking that
+a learned trim is held (see `ShortTermFuelTrimBehavior`).
 
 For suspected test-order leaks, run the built binary directly from `unit_tests/`:
 `build/rusefi_test --gtest_shuffle --gtest_random_seed=31337 --gtest_repeat=3`.
@@ -189,6 +205,26 @@ callbacks. A linear callback that chains another conversion must not guard on
 start API directly from the callback (see `slowAdcEndCB()` in
 `firmware/hw_layer/ports/stm32/stm32_adc_v2.cpp`).
 
+### Nested system locks: caught only by the simulator
+
+Code running under `chibios_rt::CriticalSectionLocker`/`chSysLock*` (for
+example `ToothLoggerBufferPool::appendI()`) must call only I-class functions.
+Calling a helper that takes its own locker, such as
+`TriggerCentral::getCurrentEnginePhase()`, makes ChibiOS state checking halt
+the simulator with `chSysHalt: SV#4` (thread) or `SV#6` (ISR). Unit tests have
+no lock state checker and pass; the simulator functional test (CI
+`build-simulator.yaml`) is the first place this shows up. Use or add an `...I`
+variant (`getCurrentEnginePhaseI()`).
+
+### Simulator build feature flags
+
+The simulator Makefile does not track changes to board-derived
+`TS_PAGE_GUARD_DEFS` as object dependencies. When switching between board
+configurations with different feature flags (for example, `EFI_LUA=FALSE` and
+Lua enabled), run `make clean` in `simulator/` before validating the new build;
+otherwise stale objects can make it appear to pass without compiling the new
+configuration.
+
 ### Simulator Functional Test (local WSL quirks)
 
 `./gradlew simulatorFunctionalTestLauncherWithSimulator` (repo root; also CI `build-simulator.yaml`, Linux-only) launches `simulator/build/rusefi_simulator` and talks TS protocol over TCP :29001. Two local traps, both hit 2026-08-25:
@@ -233,6 +269,7 @@ firmware/gen_enum_to_string.sh
 
 ### Deep Dive AI Guidance
 For detailed technical documentation intended for AI assistants, see:
+- [Firmware Business Logic Testing](docs/firmware-business-logic-testing.md) - Host-test seams, fuel-trim and PWM behavior tests, A/C state ownership and LTFT persistence follow-ups.
 - [Fueling System](docs/AI/fueling_system.md) - Mass-based fueling pipeline (17 stages).
 - [Cold-start Logic](docs/AI/cold_start.md) - Priming, cranking-state hysteresis, mass tables, ASE/WUE overlap, cycle counters and sensor fallbacks.
 - [Acceleration Enrichment](docs/AI/acceleration_enrichment.md) - Four selectable AE modes including Lua mass injection, independent wall wetting, TPS sampling, correction units, flex compensation and diagnostics.
@@ -251,14 +288,20 @@ For detailed technical documentation intended for AI assistants, see:
 - [Engine Sniffer](docs/AI/engine_sniffer.md) - Digital Sniffer, tooth/composite capture, RPM gates, formats, diagnostic artifacts, and relevant MCP tools and limits.
 - [Lookups & Log Field Metadata](docs/AI/lookup.md) - The three generated per-field tables (config value_lookup, output_lookup, MLG log fields): shared codegen machinery, differing direction/naming/flash shape, EFI_LUA_LOOKUP gating, dead switch-variant ODR hazard.
 - [Hardware Quality Control & Direct I/O](docs/AI/hardware-quality-control.md) - Bench test subsystem, direct pin console commands, CAN QC protocol (0x770000) for factory test rigs, smart-driver diagnostics, trigger self-stimulation, ETB bench/autocal.
+- [HW QC Stim Rig](docs/AI/hw-qc-stim-rig.md) - Tester firmware in rusefi-hardware `digital-inputs/firmware`: test cycle, board detection, analog/counter expectations, output ordinals that must match `getBoardMeta*` and the QC harness.
 - [Configuration Storage](docs/AI/configuration_storage.md) - Storage manager, INT_FLASH/MFS/SD backends, double-copy settings write, extra flash pages piggybacked on the settings sector.
 - [Firmware Flash Usage](docs/firmware-flash-usage.md) - uaefi121 measurements, feature-removal tradeoffs, flash-region accounting, and reproducible size comparisons.
 - [Hellen Board Mapping](docs/hellen-board-mapping.md) - Connector-pin -> hellen-one module -> STM32 pin mapping chain: meta headers (H144_/MM100_ namespaces), connector YAMLs + PinoutLogic codegen, resistor-based board ID; also how to recover the mapping from module schematic PDFs (pdftotext + Altium hidden-text artifacts).
 - [Connector Artwork](docs/imagegen.md) - Photo-to-drawing workflow and shared pin coordinates. Image generation does not reliably honor requested canvas dimensions or pixel positions; align the export and measure the final terminal centers before updating YAML.
+- [Connector Placement Overlays](docs/AI/connector-placement-overlays.md) - Add connector context in unused image space while preserving the canvas and terminal pixels so YAML coordinates stay valid; remeasure coordinates if they change.
 - [Hardware Re-init & requiresPowerCycle](docs/hardware-reinit-and-power-cycle.md) - How Burn applies settings live (activeConfiguration diff, applyNewHardwareSettings stop/start), and the annotated list of reboot-only settings.
 - [Board Configuration Override Hooks](docs/board-configuration-override-hooks.md) - custom_board_DefaultConfiguration vs ConfigOverrides vs fix_configuration vs validateConfig vs OnConfigurationChange: lifecycle timelines and decision guide.
 - [Sensor Rate-of-Change Handling](docs/sensor-rate-of-change-filtering.md) - per-sensor inventory of low-pass cutoffs, ExpAverage smoothing, slew limiting and rate-based control inputs; notably there are NO rate-of-change plausibility warnings anywhere.
 - [Java Gradle Structure Review](docs/java-gradle-structure-review.md) - Gradle subproject inventory, dependency graph, and known structural issues in `java_console/` + `java_tools/`.
+- [Java Frontend App](docs/AI/frontend-app.md) - Console startup, ECU connection and data flow, main user workflows, and module boundaries.
+- [TunerStudio User Folders](docs/AI/tunerstudio-user-folders.md) - Every read/write of `~/.efiAnalytics` and TunerStudio project folders: plugin install, ecuDef cache priming and fallback, project auto-creation, post-migration check, plugin tune/log access.
+- [Console Pinout Tab](docs/AI/pinout-tab.md) - Connector YAML packaging, cache validation, pin rendering, tune assignments, and Tuning navigation.
+- [PatchCordHelper Pinout Tool](docs/AI/pinout-helper.md) - Patchcord wiring matches, assembly steps, connector images, and generated instructions.
 - [Java Connectivity & UI Unit Testing](docs/java-connectivity-ui-unit-testing.md) - Test approach for the console connectivity/flashing/session layer and Swing UI: established fake/seam patterns and a refactoring-cost-ordered test backlog.
 
 ### Console Swing invariant: one glass pane per frame
@@ -277,6 +320,41 @@ the Windows check suite, but its failing XML and logs came from the Linux
 console workflow (run 37950058647); inspect the producing workflow rather
 than inferring the host from the report association.
 
+### Java tests run headless on CI
+
+The console workflow's `./gradlew test` step runs on Ubuntu without
+`xvfb-run`, so Java reports `GraphicsEnvironment.isHeadless()`; a Windows
+desktop run is not headless. Drag and drop setup differs: headless Swing
+installs no `DropTarget` (`getDropTarget()` returns null after
+`setTransferHandler`), and `JList.setDragEnabled(true)` throws
+`HeadlessException`. A synthetic mouse press on a `JTree` throws too: its
+look and feel reads the toolkit's menu shortcut key, so send test clicks to a
+plain component when only the press itself matters. Guard such calls, and
+reproduce CI locally with `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true ./gradlew :ui:test`.
+`Component.dispatchEvent` does not deliver key or mouse events to a component that is not
+displayed (key events are retargeted to the absent focus owner), so a test can silently exercise
+nothing. Invoke the component's own listeners or bound actions directly (see
+`SettingsSearchPopupTest.theTabBarBoxOpensTheSearchWithWhatWasTyped`).
+
+### Option-pane dialogs keep their first size
+
+`JOptionPane.showConfirmDialog` sizes its dialog once and does not grow it. If the content's
+preferred size then increases (a row shown, a taller preview), `GridBagLayout` is short of space and
+drops every row to its minimum size: a `JScrollPane` collapses to about one row. Keep such content's
+preferred size constant while it is edited: give scroll panes a minimum equal to their preferred
+size, reserve fixed-size slots for changing content, and switch alternatives with `CardLayout`
+rather than `setVisible` (see `CustomIndicatorDialog`, `contentKeepsItsSizeWhileEditing`).
+
+### Swing clicks on drag-enabled components
+
+AWT sends no `MOUSE_CLICKED` once the pointer moved between press and
+release, and `DragSource.getDragThreshold()` can be as small as 2 px
+(measured on a Windows desktop), so on a drag-enabled `JList` a slightly
+moving click starts drag and drop and never reaches the component as a
+click. Act on release within a few pixels of the press, and treat a drag
+dropped back on its origin row as a click (see `LogViewerPanel.rowMouse`
+and `dropOnList`).
+
 ### Native Swing screenshots under WSLg
 
 Xvfb without a window manager verifies shaped-window input but cannot reveal
@@ -293,6 +371,7 @@ theme when testing detached windows.
 - **Calibration Compatibility**: Maintaining [compatibility with older tunes](docs/calibration-compatibility.md) when adding new parameters.
 - **ChibiOS RTOS**: Real-time operating system foundation
 - **Config validate vs fix separation**: `validateConfigOnStartUpOrBurn()` is read-only validation; ALL configuration mutation on startup/burn belongs in `applyDefaultsOrFixAfterBurn()` (returns true if it changed anything). Board-specific fixes go in the `custom_board_fix_configuration` override (same changed-flag contract); `custom_board_validateConfig` must never mutate config.
+- **`engineConfiguration` vs `config` is a RAM cost, not a naming choice**: `activeConfiguration` is a full RAM copy of `engine_configuration_s` (about 4 KB, main SRAM on every STM32 board) kept only so burn can diff hardware settings. A field belongs in `engine_configuration_s` only if something reads its previous value: `activeConfiguration.X`, `previousConfiguration->X`, `isConfigurationChanged(X)`, or a `RegisteredOutputPin` offset into it. Pure calibration (curves, tables, display strings) goes in the outer `persistent_config_s` (`config->X`), typically via a module `*_tables.txt` fragment included near the end of `rusefi_config.txt`; a module's `*_engineConfiguration.txt` fragment should hold only the hardware/enable part. Grep those four patterns before moving a field either way.
 - **No sensor has a value during init**: `initNewSensors()` only *subscribes* sensors to the ADC — the first sample arrives on a later slow-ADC callback. `initSensors()` runs a few instructions later on the same thread, so `Sensor::get()` on any ADC-backed sensor is still invalid for every `init*()` function. Code that needs a real reading at start-up must defer to the slow callback and latch there (worked example: `updateFixedBaroFromMap()` in `controllers/sensors/impl/map.cpp`). A `Sensor::get(...).value_or(someDefault)` at init time does not "read the sensor, with a fallback" — it latches the default, every single boot; that was issue #9744.
 - **Engine modules**: Engine-asynchronous control logic derives from `EngineModule` and registers in the `type_list` in `firmware/controllers/algo/engine.h`. Before creating a module or making one compile-time optional, search the codebase for `[tag:disable_engine_module]` and read those comments — they document the module lifecycle and the TS-page guard-flag rules (a module that owns a TunerStudio page must have its `EFI_*` flag declared in the board `prepend.txt`, never in `board.mk` or `efifeatures.h`).
 
@@ -306,6 +385,16 @@ use the module makefile for compiler include paths and source files.
 
 **Custom gauge lists and shared templates:** `TUNING_SECTION_FILE` overrides the inherited `[Tuning]` layout independently of `GAUGES_DECLARATIONS_FILE`. Hiding menu entries does not remove their page definitions. Guard optional shared gauge references with the matching `ts_show_*` flag in every include (boost curves and secondary panels included); keep `IniReferenceValidator` strict. Adding a declaration cannot repair a reference when `ignore_gauges.txt` subsequently removes that declaration.
 
+For resizable TunerStudio table dialogs using `border` layout, place the main
+table in `Center` and the settings/status panel in `East`. `West` keeps the
+table's preferred width, leaving an empty center instead of expanding the table
+when the window is widened (see the VE blend dialogs).
+
+For Lambda/AFR views of a target adder, use one table editor and one display
+alias per native table, switching its units and scale like the main target
+table. Separate Lambda and AFR editors over overlapping calibration storage
+can leave duplicate controls overlaid in TunerStudio.
+
 - `firmware/integration/rusefi_config.txt` defines the parameters stored in persistent configuration (both "configuration", ie which pins do what, and the "calibration" or "tune", like the VE table, timing, etc.). This is the primary input that describes the main `engine_configuration_s` struct and the top-level persistent config layout.
 - `firmware/integration/config_page_*.txt` files define additional TunerStudio memory pages, each containing its own struct (e.g. `page2_s`, `page3_s`, `page4_s`). These pages hold data that lives outside the main configuration image — for example, high-speed scatter offsets (`page2_s` / TS page 2), long-term fuel trim tables (`page3_s` / TS page 3), and secondary VE tables with blend controls (`page4_s` / TS page 4). The struct and file numbers match the TunerStudio page numbers.
 - A board can append extra fields to `engine_configuration_s` by providing `board_engine_configuration.txt` in its board directory (picked up by `gen_config_common.sh`); a board `board_config.txt` instead splices into the outer `persistent_config_s`, so its fields are reached as `config->foo`, not `engineConfiguration->foo` (the AlphaX `boardUse*PullUp` bits and `boardUseCanTerminator` live there). Per-board TunerStudio fragments exist for most template sections - see the `set_board_file` list in `gen_config_common.sh` (e.g. `board_constants_extensions.ini` for per-board `requiresPowerCycle`, `board_panel_can_main.ini` for the CAN dialog); e.g. the `can3BaudRate`/`can3RxPin`/`can3TxPin` fields exist only on boards that declare them there, guarded in shared C++ by `#if (EFI_CAN_BUS_COUNT >= 3)` with the count itself raised via the board's `prepend.txt`. Note: adding/renaming these board `.txt` inputs may not trigger config regeneration on the next `make` - `touch firmware/integration/rusefi_config.txt` to force it.
@@ -313,7 +402,7 @@ use the module makefile for compiler include paths and source files.
   - C/C++ headers in `firmware/controllers/generated/` — the main config produces `engine_configuration_generated_structures.h`, while each config page produces a corresponding `page_N_generated.h`.
   - Along with `firmware/tunerstudio/tunerstudio.template.ini`, generates the ini file used by TunerStudio to communicate with the ECU. All tuner-adjustable parameters **MUST** appear in these input files to be useful.
 - `firmware/integration/LiveData.yaml` defines objects processed by the same tool to be transmitted from the ECU about the current state of the world. For example sensors, output values, and intermediate calculations useful for logging.
-- **Sharing string constants between .txt / .ini / Java** (`VariableRegistry`): a quoted `#define NAME "value"` in a definition/prepend `.txt` becomes a `public static final String` in the generated `VariableRegistryValues.java`, and can be referenced as `@@NAME@@` (verbatim, keeps quotes) or `@#NAME#@` (quotes stripped) in the `.txt` struct definitions and `tunerstudio.template.ini`. Use `@#NAME#@` where a bare identifier is needed — struct/bit field names and `{ }` indicator expressions (see `OUTPUT_CHANNEL_SD_*`). Put such defines in `firmware/integration/rusefi_config_shared.txt`: it is the only prepend read by *both* the main config pipeline (`gen_config_common.sh` — template .ini + `VariableRegistryValues.java`) and the LiveData pipeline (`LiveData.yaml` `prepend:` entries — `output_channels.txt` and friends). Comments (the `;text` part) stay templated in generated C headers and are expanded only for TS output, so don't expect `@@...@@` in comments to resolve in `*_generated.h`.
+- **Sharing string constants between .txt / .ini / Java** (`VariableRegistry`): a quoted `#define NAME "value"` in a definition/prepend `.txt` becomes a `public static final String` in the generated `VariableRegistryValues.java`, and can be referenced as `@@NAME@@` (verbatim, keeps quotes) or `@#NAME#@` (quotes stripped) in the `.txt` struct definitions and `tunerstudio.template.ini`. Use `@#NAME#@` where a bare identifier is needed — struct/bit field names and `{ }` indicator expressions (see `OUTPUT_CHANNEL_SD_*`). Put such defines in `firmware/integration/rusefi_config_shared.txt`: it is the shared prepend read by *both* the main config pipeline (`gen_config_common.sh` — template .ini + `VariableRegistryValues.java`) and the LiveData pipeline (`LiveData.yaml` `prepend:` entries — `output_channels.txt` and friends). A board `prepend.txt` is also read by both, ahead of the shared file, and the first definition wins (`[tag:live_data_board_prepend]`): the LiveData pipeline sees it only through the exported `BOARD_DIR` (firmware `make`, and `gen_config.sh` per board), so a standalone `gen_config_board.sh` run reuses whatever live-data fragments are on disk. Generated live-data outputs and `VariableRegistryValues.java` are shared files: the last board generated leaves its values there (`gen_config.sh` resets live data to the board-less default at the end; the main-pipeline Java file still keeps the last board's values). Comments (the `;text` part) stay templated in generated C headers and are expanded only for TS output, so don't expect `@@...@@` in comments to resolve in `*_generated.h`.
 
 LiveData scalar field names do not support `@#NAME#@` substitution (the parser rejects the line before expansion); use the literal field name and reserve that syntax for supported bit fields/template expressions. A shared string constant can still give Java the same channel name.
 
@@ -476,12 +565,37 @@ height; re-evaluate after ancestor resize/layout as well as local resize.
 
 The console's FlatLaf look is defined in `java_console/ui/src/main/resources/com/rusefi/ui/theme/`
 (`[tag:console_theme]`, registered in `UiHelper.configureLaf()`): `FlatLaf.properties` for
-sizes/shapes shared by all themes, `FlatLightLaf.properties` (and a future
-`FlatDarkLaf.properties`) for palette variables and colour keys. Do not put colour keys in the
-shared file: FlatLaf's built-in `FlatLightLaf.properties` assigns most of them and wins. Add new
-look settings there rather than as `UIManager.put` calls, so they follow the active theme.
+sizes/shapes shared by all themes, `FlatLightLaf.properties` and `FlatDarkLaf.properties` for
+palette variables and colour keys. Do not put colour keys in the shared file: FlatLaf's built-in
+`FlatLightLaf.properties` assigns most of them and wins. Add new look settings there rather than
+as `UIManager.put` calls, so they follow the active theme.
+Users pick the theme in File > Appearance (Light, Dark, Follow system; `ConsoleTheme`,
+`[tag:console_dark_mode]`). It is read once in `UiHelper.configureLaf()` and applies on the next
+start, because many panels read their colours when they are built; `-Dconsole.theme=dark|light`
+overrides the saved choice. Every new colour key goes into both theme files (`ThemeParityTest` checks
+equal key sets and contrast). `LightThemeSnapshotTest` pins every resolved light colour, so a
+refactor of the theme files must leave it green; an intended light change updates
+`light-theme-snapshot.txt` from the copy the failing run writes to `ui/build/console-theme/`.
+FlatLaf's Linux defaults make `TitlePane.closeHoverForeground` and
+`TitlePane.closePressedForeground` aliases of `TitlePane.foreground`; on other
+platforms they remain stock white. `LightThemeSnapshotTest` derives the Linux
+expectations from the pinned title colour and omits these aliases from its
+replacement snapshot, so the same baseline works across platforms.
+`tint()` mixes with white and glows on dark backgrounds: the dark file uses `shade()` instead.
+Hard-coded `Color` values in `ui/src/main/java` are counted by `HardcodedColorRatchetTest`
+(`[tag:fixed_color]`): take colours from the theme, or mark one that must look the same in every
+theme with that tag and a reason; lower `hardcoded-colors-baseline.txt` when removing them.
+Colours inside images are invisible to that test: load the `icons/tuning/*48.png` icons through
+`TuningIcons.load`, which lightens them in the dark theme (`TuningIconsTest` checks their contrast).
 Java's logical `Font.MONOSPACED` renders as Courier New on Windows; use `ConsoleFonts.mono()` for
 monospaced console text. Toolbar controls share `JoinedButtons.HEIGHT` so a row lines up.
+For a rounded panel, set a `FlatLineBorder` with an arc: `FlatPanelUI` then paints the background
+rounded too. Do not also set `FlatClientProperties.STYLE` (`arc`) on the panel, because applying a
+style drops a border set earlier (see `WizardStyle.styleRounded`).
+On Windows 10+ FlatLaf resizes custom-decorated windows through its native window border,
+which it skips for `setUndecorated(true)` windows; its Swing resizer is only installed when
+the native border is unsupported. An undecorated FlatLaf dialog is therefore a fixed size on
+Windows: leave it decorated and let FlatLaf apply the decorations (`DetachedPanelTitleBar`).
 
 ## Java Version Constants
 
@@ -499,6 +613,9 @@ builds garble non-ASCII literals. On a Windows checkout, `SensorLoggerTest` (tem
 directory still locked at cleanup), `FirmwareSourceCodeDownloaderTest` (two
 rollback-failure cases that expect an `IOException` Windows does not raise) and
 `CalibrationPanelWorkspaceTest` fail independently of the change being tested.
+`ConsoleThemeTest` asserts light-theme colours but `UiHelper.configureLaf()` honours the saved
+console theme, so with "Follow system" on a Windows desktop in dark mode it fails; run the Java
+tests with `-Dconsole.theme=light` (e.g. in `JAVA_TOOL_OPTIONS`) to pin the theme.
 
 - When modifying Java code (`java_console/`, `java_tools/`), bump `UiVersion.CONSOLE_VERSION` in `java_tools/version/src/main/java/com/rusefi/UiVersion.java` to the current date in `YYYYMMDD` format as part of the same change (no-op if it already shows today's date).
 - `Autoupdate.AUTOUPDATE_VERSION` in `java_console/autoupdate/src/main/java/com/rusefi/autoupdate/Autoupdate.java` is a separate, manually managed version for the updater executable. Bump it (same `YYYYMMDD` format) only when the change affects updater behavior, i.e. code that runs inside `rusefi_autoupdate.exe`.

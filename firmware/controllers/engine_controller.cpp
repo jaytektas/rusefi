@@ -120,7 +120,7 @@ class PeriodicFastController : public PeriodicTimerController {
 	}
 
 	int getPeriodMs() override {
-		return FAST_CALLBACK_PERIOD_MS;
+		return static_cast<int>(FAST_CALLBACK_PERIOD_MS);
 	}
 };
 
@@ -131,7 +131,7 @@ class PeriodicSlowController : public PeriodicTimerController {
 
 	int getPeriodMs() override {
 		// no reason to have this configurable, looks like everyone is happy with 20Hz
-		return SLOW_CALLBACK_PERIOD_MS;
+		return static_cast<int>(SLOW_CALLBACK_PERIOD_MS);
 	}
 };
 
@@ -202,7 +202,7 @@ static void doPeriodicSlowCallback() {
 
 #if EFI_PROD_CODE
 	// single-shot reset all counter after 5 second of happines
-	static unsigned int slow_counter = 5 * 1000 / SLOW_CALLBACK_PERIOD_MS;
+	static unsigned int slow_counter = static_cast<unsigned int>(5 * 1000 / SLOW_CALLBACK_PERIOD_MS);
 	if ((slow_counter) && (--slow_counter == 0)) {
 		errorHandlerResetCounters();
 	}
@@ -488,6 +488,8 @@ void commonInitEngineController() {
 #endif // EFI_ENGINE_CONTROL
 
 #if EFI_UNIT_TEST
+	// [tag:trigger_rpm_startup] General algorithm tests need RPM without a pin.
+	// TriggerRpmStartup removes this registration before testing hardware startup.
 	engine->rpmCalculator.Register();
 #endif /* EFI_UNIT_TEST */
 
@@ -566,6 +568,7 @@ static bool validateConfig(const engine_configuration_s* previousConfiguration) 
   }
 #endif // EFI_SOFTWARE_KNOCK
 
+#if EFI_ENGINE_CONTROL
   // the only step which is allowed to modify configuration - everything else in this method is read-only validation
   applyDefaultsOrFixAfterBurn(previousConfiguration);
 	if (!(engineConfiguration->injector.flow > 0) || !std::isfinite(engineConfiguration->injector.flow)) {
@@ -582,6 +585,8 @@ static bool validateConfig(const engine_configuration_s* previousConfiguration) 
 		criticalError("Invalid Number of cylinders: %d", engineConfiguration->cylindersCount);
 		return false;
 	}
+#endif // EFI_ENGINE_CONTROL
+
 #if EFI_PROD_CODE && (BOARD_MC33810_COUNT > 0)
     float maxConfiguredCorr = config->dwellVoltageCorrValues[0];
     for (size_t i = 0;i<efi::size(config->dwellVoltageCorrValues);i++) {

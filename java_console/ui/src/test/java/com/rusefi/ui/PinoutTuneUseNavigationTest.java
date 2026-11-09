@@ -104,6 +104,27 @@ class PinoutTuneUseNavigationTest {
                 assertTrue(hasSelectedPin(tuning, "B6 Low Side output"),
                     "The assigned fuel-pump field must be displayed");
             });
+
+            // The opened setting is marked once the page is shown, until the next click.
+            SwingUtilities.invokeAndWait(() -> { });
+            SwingUtilities.invokeAndWait(() -> {
+                TuningPane tuning = tuningRef.get();
+                JComponent marked = tuning.getDialogForTests().getHighlightedFieldForTests();
+                assertNotNull(marked, "The setting opened from Pinout is highlighted");
+                assertTrue(components(marked, JComboBox.class).stream()
+                        .anyMatch(combo -> "B6 Low Side output".equals(combo.getSelectedItem())),
+                    "It is the fuel-pump pin row");
+                assertTrue(components(marked, JLabel.class).stream()
+                    .anyMatch(label -> label.getText() != null && label.getText().contains("Fuel Pump output")),
+                    "with its own label");
+
+                // a press on any component counts; a plain panel, since clicking the menu tree asks the
+                // toolkit for the menu shortcut key, which throws on headless CI
+                marked.dispatchEvent(new MouseEvent(marked, MouseEvent.MOUSE_PRESSED, 0, 0, 1, 1, 1, false,
+                    MouseEvent.BUTTON1));
+                assertNull(tuning.getDialogForTests().getHighlightedFieldForTests(),
+                    "The first click anywhere removes the mark");
+            });
         } finally {
             SwingUtilities.invokeAndWait(() -> {
                 if (tuningRef.get() != null) {
